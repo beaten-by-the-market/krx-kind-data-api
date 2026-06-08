@@ -1,0 +1,160 @@
+"""HTML 응답 → DataFrame 파서 레지스트리.
+
+KIND 화면은 두 부류다.
+  1) 평범한 HTML 테이블 → `pd.read_html`로 한 방에 (`read_html`)
+  2) 회사코드가 행의 onclick(`fnDetailView('00126')` 등)에만 있는 목록 화면 →
+     read_html로 보이는 컬럼을 뽑고, onclick에서 코드를 추출해 붙임
+     (`kind_list_with_code`)
+
+새 파서가 필요하면 함수를 만들어 `register_parser(name, func)`로 등록하면
+엔드포인트 카탈로그에서 `"parser": name`으로 가리킬 수 있다.
+"""
+from __future__ import annotations
+
+import re
+from io import StringIO
+from typing import Any, Callable, Optional
+
+import pandas as pd
+from bs4 import BeautifulSoup
+
+from .exceptions import KINDParseError
+
+# 목록 화면에서 회사코드가 박혀 있는 onclick 핸들러들
+_CODE_RE = re.compile(
+    r"(?:fnDetailView|companysummary_open|openCompanyInfoNew|fnViewDetail)"
+    r"\('([A-Za-z0-9]+)'"
+)
+
+
+def read_html(
+    html: str, *, table_index: int = 0, header: Optional[int] = 0, **_: Any
+) -> pd.DataFrame:
+    """가장 일반적인 경우: HTML 안의 table_index번째 표를 DataFrame으로."""
+    try:
+        tables = pd.read_html(StringIO(html), header=header)
+    except ValueError as e:  # "No tables found"
+        raise KINDParseError(f"No HTML table found ({e})") from e
+    if table_index >= len(tables):
+        raise KINDParseError(
+            f"table_index={table_index} 이지만 표는 {len(tables)}개뿐"
+        )
+    return tables[table_index]
+
+
+def kind_list_with_code(
+    html: str,
+    *,
+    table_class: Optional[str] = None,
+    table_index: int = 0,
+    header: Optional[int] = None,
+    columns: Optional[list] = None,
+    code_column: str = "회사코드",
+    **_: Any,
+) -> pd.DataFrame:
+    """목록 화면: 보이는 컬럼은 read_html로, 회사코드는 onclick에서 추출해 붙임.
+
+    table_class를 주면 그 클래스의 표를, 없으면 table_index번째 표를 대상으로
+    한다(read_html과 BeautifulSoup의 표 순서가 같다는 가정).
+
+    이런 목록 화면은 보통 <thead>가 없어 header=None이 기본이다. columns를 주면
+    보이는 컬럼명을 그 순서로 지정한다(회사코드는 그 뒤에 자동으로 붙음).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    if table_class is not None:
+        table = soup.find("table", class_=table_class)
+    else:
+        tables = soup.find_all("table")
+        table = tables[table_index] if table_index < len(tables) else None
+    if table is None:
+        raise KINDParseError(
+            f"대상 테이블을 못 찾음 (class={table_class!r}, index={table_index})"
+        )
+
+    df = read_html(str(table), table_index=0, header=header)
+    if columns is not None:
+        df.columns = list(columns)[: len(df.columns)]
+
+    body = table.find("tbody") or table
+    codes = []
+    for tr in body.find_all("tr"):
+        m = _CODE_RE.search(str(tr))
+        codes.append(m.group(1) if m else None)
+    # 헤더 행이 tbody 밖에 있으면 행 수가 맞는다. 어긋나면 코드 부착 생략.
+    if len(codes) == len(df):
+        df[code_column] = codes
+    return df
+
+
+def today_disclosure(html: str, **_: Any) -> pd.DataFrame:
+    """당일공시(todaydisclosure.do) 전용 — 회사코드 + 공시 원문 URL까지 추출."""
+    from .transport import disclosure_viewer_url
+
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", class_="list type-00 mt10") or soup.find("table")
+    if table is None or not table.find("tbody"):
+        raise KINDParseError("당일공시 테이블을 찾지 못함")
+
+    rows = []
+    for tr in table.find("tbody").find_all("tr"):
+        cols = tr.find_all("td")
+        if len(cols) < 4:
+            continue
+        company_a = cols[1].find("a")
+        code = ""
+        if company_a and company_a.has_attr("onclick"):
+            m = _CODE_RE.search(company_a["onclick"])
+            code = m.group(1) if m else ""
+        title_a = cols[2].find("a")
+        title = (title_a.get("title", "").strip() if title_a else cols[2].text.strip())
+        url = ""
+        if title_a and title_a.has_attr("onclick"):
+            m = re.search(r"openDisclsViewer\('(\d+)'", title_a["onclick"])
+            if m:
+                url = disclosure_viewer_url(m.group(1))
+        rows.append(
+            {
+                "시간": cols[0].text.strip(),
+                "회사코드": code,
+                "회사명": cols[1].text.strip(),
+                "공시제목": title,
+                "제출인": cols[3].text.strip(),
+                "상세URL": url,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _pad6(code: Any) -> str:
+    """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다."""
+    s = str(code).strip()
+    return f"{int(s):06d}" if s.isdigit() else s
+
+
+def corp_list(html: str, **_: Any) -> pd.DataFrame:
+    """상장법인목록(corpList.do?method=download) — 종목코드를 6자리 문자열로 정규화."""
+    df = read_html(html, table_index=0, header=0)
+    if "종목코드" in df.columns:
+        df["종목코드"] = df["종목코드"].map(_pad6)
+    return df
+
+
+_PARSERS: dict[str, Callable[..., pd.DataFrame]] = {
+    "read_html": read_html,
+    "kind_list_with_code": kind_list_with_code,
+    "today_disclosure": today_disclosure,
+    "corp_list": corp_list,
+}
+
+
+def register_parser(name: str, func: Callable[..., pd.DataFrame]) -> None:
+    """외부에서 커스텀 파서를 추가."""
+    _PARSERS[name] = func
+
+
+def get_parser(name: str) -> Callable[..., pd.DataFrame]:
+    if name not in _PARSERS:
+        raise KINDParseError(
+            f"Unknown parser: {name!r}. Available: {sorted(_PARSERS)}"
+        )
+    return _PARSERS[name]
