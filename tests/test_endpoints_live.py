@@ -29,6 +29,7 @@ def test_catalog_has_core_endpoints():
         "growth_report",
         "listing_company",
         "merge_listing",
+        "pubofr_prog_com",
         "today_disclosure",
     ):
         assert required in names
@@ -63,7 +64,28 @@ def test_today_disclosure_shape():
         assert col in df.columns
 
 
+def test_pubofr_prog_com_sample():
+    df = fetch(
+        "pubofr_prog_com",
+        searchCorpName="이루다",
+        searchCorpNameTmp="이루다",
+        isurCd="16406",
+        fromDate="2019-01-01",
+        toDate="2020-12-31",
+    )
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) == 1
+    for col in ("회사명", "신고서제출일", "상장예정일", "업무처리번호"):
+        assert col in df.columns
+    assert df.loc[0, "회사명"] == "이루다"
+    assert str(df.loc[0, "업무처리번호"]) == "20191128000155"
+
+
 def test_endpoint_info_roundtrip():
     info = endpoint_info("merge_listing")
     assert info["path"] == "listinvstg/mergeListingCompany.do"
     assert info["parser"] == "kind_list_with_code"
+
+    info = endpoint_info("pubofr_prog_com")
+    assert info["path"] == "listinvstg/pubofrprogcom.do"
+    assert info["send_as"] == "data"

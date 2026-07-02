@@ -45,7 +45,7 @@ soup = BeautifulSoup(response.text, 'html.parser')
 DART 공시 + KRX/KIND 결합 노트북. KIND 호출이 가장 많은 폴더.
 
 - [자사주_소각KIND.ipynb](../../dart_disclosure/자사주_소각KIND.ipynb) — `corpgeneral/stockissuelist.do`(증자현황), `corpgeneral/listedissuestatusdetail.do`(상장종목현황 상세). `requests.post` → `pd.read_html`. 자사주 소각에 상장주식수 결합.
-- [listing_special.ipynb](../../dart_disclosure/listing_special.ipynb) — KIND 엔드포인트 다수: `listinvstg/miscListTypeStatDetail.do`, `corpgeneral/growthReport.do`, `corpgeneral/corpList.do`, `common/corpList.do`, `investwarn/delcompany.do`(상장폐지), `listinvstg/listingcompany.do`(신규상장), `listinvstg/mergeListingCompany.do`(합병상장), `corpgeneral/listedissuestatusdetail.do`. 신규/특수상장 종합. **KIND 호출 최다.**
+- [listing_special.ipynb](../../dart_disclosure/listing_special.ipynb) — KIND 엔드포인트 다수: `listinvstg/miscListTypeStatDetail.do`, `corpgeneral/growthReport.do`, `corpgeneral/corpList.do`, `common/corpList.do`, `investwarn/delcompany.do`(상장폐지), `listinvstg/listingcompany.do`(신규상장), `listinvstg/mergeListingCompany.do`(합병상장), `listinvstg/pubofrprogcom.do`(공모기업 진행현황), `corpgeneral/listedissuestatusdetail.do`. 신규/특수상장 종합. **KIND 호출 최다.**
 
 ### 2. [englishkind/](../../englishkind/)
 영문공시 지원. 당일공시 목록을 긁어 영문 대상 공시를 추린다. (전용 폴더)
