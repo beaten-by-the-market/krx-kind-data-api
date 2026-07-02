@@ -12,12 +12,26 @@ import pandas as pd
 import pytest
 
 from krx_kind_data_api import endpoint_info, fetch, list_endpoints
+from krx_kind_data_api.endpoints import ENDPOINTS
 
 pytestmark = pytest.mark.skipif(
     os.getenv("KIND_SKIP_LIVE") == "1", reason="KIND_SKIP_LIVE set"
 )
 
 TODAY = datetime.today().strftime("%Y-%m-%d")
+
+
+def build_input_schema(name: str) -> dict:
+    """endpoint_info(name)["params"] → MCP inputSchema. docs 예제와 동일 로직."""
+    params = endpoint_info(name).get("params", {})
+    return {
+        "type": "object",
+        "properties": {
+            k: {"type": "string", "description": v["desc"]}
+            for k, v in params.items()
+        },
+        "required": [k for k, v in params.items() if v.get("required")],
+    }
 
 
 def test_catalog_has_core_endpoints():
@@ -79,6 +93,96 @@ def test_pubofr_prog_com_sample():
         assert col in df.columns
     assert df.loc[0, "회사명"] == "이루다"
     assert str(df.loc[0, "업무처리번호"]) == "20191128000155"
+
+
+# ── params 메타데이터 정합성 (네트워크 불필요) ──────────────────────
+
+def test_all_endpoints_have_params_metadata():
+    for name, spec in ENDPOINTS.items():
+        assert "params" in spec, f"{name}에 params 문서가 없습니다"
+        assert isinstance(spec["params"], dict) and spec["params"]
+
+
+def test_params_required_flags_match_required_list():
+    # params에서 required=True인 키 == spec['required'] 집합
+    for name, spec in ENDPOINTS.items():
+        params = spec["params"]
+        flagged = {k for k, v in params.items() if v.get("required")}
+        assert flagged == set(spec.get("required", [])), (
+            f"{name}: params required={flagged} vs spec required={spec.get('required')}"
+        )
+
+
+def test_params_have_desc_and_kind():
+    for name, spec in ENDPOINTS.items():
+        for key, meta in spec["params"].items():
+            assert meta.get("desc"), f"{name}.{key}에 desc 없음"
+            assert meta.get("kind"), f"{name}.{key}에 kind 없음"
+
+
+def test_build_input_schema_shape():
+    schema = build_input_schema("pubofr_prog_com")
+    assert schema["type"] == "object"
+    assert schema["required"] == ["toDate"]
+    assert "searchCorpName" in schema["properties"]
+    assert schema["properties"]["searchCorpName"]["type"] == "string"
+
+
+# ── 예시값이 실제로 동작하는지 (라이브) ─────────────────────────────
+
+def test_pubofr_prog_com_filter_is_subset_of_all():
+    # 필터 요청 1건이 전체 결과에 그대로 포함되는지(같은 데이터셋 확인)
+    cap = fetch("pubofr_prog_com", searchCorpName="이루다",
+                searchCorpNameTmp="이루다", isurCd="16406",
+                fromDate="2019-01-01", toDate="2020-12-31")
+    assert len(cap) == 1
+    code = str(cap.loc[0, "업무처리번호"])
+    allrows = fetch("pubofr_prog_com", fromDate="2019-01-01", toDate="2020-12-31")
+    assert code in set(allrows["업무처리번호"].astype(str))
+
+
+def test_listing_company_example_params():
+    df = fetch("listing_company", toDate=TODAY)
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) > 0
+    assert "회사코드" in df.columns
+
+
+# ── SPAC 합병상장 (spac_merge_listing) ──────────────────────────────
+
+def test_spac_merge_prepare_maps_spactype():
+    # prepare 훅: spacType → listTypeArrStr, spacType는 제거 (네트워크 불필요)
+    from krx_kind_data_api.endpoints import _spac_merge_prepare
+
+    assert _spac_merge_prepare({"spacType": "존속"})["listTypeArrStr"] == "06|"
+    assert _spac_merge_prepare({"spacType": "소멸"})["listTypeArrStr"] == "07|"
+    assert _spac_merge_prepare({"spacType": "전체"})["listTypeArrStr"] == "06|07|"
+    # 미지정 → 전체
+    assert _spac_merge_prepare({})["listTypeArrStr"] == "06|07|"
+    # spacType 키는 전송 대상에서 빠진다
+    assert "spacType" not in _spac_merge_prepare({"spacType": "존속"})
+    # 매핑에 없는 값은 그대로 통과(고급 사용자)
+    assert _spac_merge_prepare({"spacType": "06|"})["listTypeArrStr"] == "06|"
+
+
+def test_spac_merge_listing_type_switch():
+    survive = fetch("spac_merge_listing", spacType="존속", toDate=TODAY)
+    dissolve = fetch("spac_merge_listing", spacType="소멸", toDate=TODAY)
+    both = fetch("spac_merge_listing", spacType="전체", toDate=TODAY)
+
+    assert len(survive) > 0 and len(dissolve) > 0
+    assert set(survive["상장유형"]) == {"SPAC 존속합병"}
+    assert set(dissolve["상장유형"]) == {"SPAC 소멸합병"}
+    # 전체 = 존속 + 소멸 (서로소)
+    assert len(both) == len(survive) + len(dissolve)
+    assert set(both["상장유형"]) == {"SPAC 존속합병", "SPAC 소멸합병"}
+
+
+def test_spac_merge_listing_columns():
+    df = fetch("spac_merge_listing", spacType="존속", toDate=TODAY)
+    for col in ("회사명", "합병상장일", "상장유형", "액면가", "공모가",
+                "공모금액", "주요제품", "최초상장주식수", "회사코드"):
+        assert col in df.columns
 
 
 def test_endpoint_info_roundtrip():

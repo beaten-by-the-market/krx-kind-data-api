@@ -16,6 +16,8 @@ from krx_kind_data_api import fetch, list_endpoints
 
 fetch("corp_list", marketType="kosdaqMkt")              # 코스닥 종목코드 마스터
 fetch("merge_listing", toDate="2026-06-08")             # 합병·재상장 기업
+fetch("spac_merge_listing", spacType="존속", toDate="2026-06-08")  # SPAC 존속합병상장
+fetch("spac_merge_listing", spacType="소멸", toDate="2026-06-08")  # SPAC 소멸합병상장
 fetch("listing_company", toDate="2026-06-08")           # 신규상장 기업
 fetch("pubofr_prog_com", toDate="2026-06-08")           # 공모기업 진행현황
 fetch("today_disclosure", marketType=1, selDate="2026-06-08")  # 당일공시
@@ -35,8 +37,39 @@ DataFrame으로 만들어 돌려줍니다. `**params`로 무엇이든 덮어쓸 
 | `growth_report` | 성장성특례 상장(성장성보고서) | euc-kr, `endDate` 필수 |
 | `listing_company` | 신규상장 기업(상장유형 01~05) | 회사코드 추출, `toDate` 필수 |
 | `merge_listing` | 합병·재상장 기업(06·07, 스팩합병) | 회사코드 추출, `toDate` 필수 |
+| `spac_merge_listing` | **SPAC 합병상장(존속/소멸)** | `spacType`(존속/소멸/전체)로 스위치, SPAC 전용 컬럼(액면가·공모가·공모금액 등), `toDate` 필수 |
 | `pubofr_prog_com` | 공모기업 진행현황 | 업무처리번호 추출, `toDate` 필수, `searchCorpName`/`isurCd` 필터 가능 |
 | `today_disclosure` | 당일공시 | `marketType`, `selDate` 필수, 공시 원문 URL 포함 |
+
+### MCP 서버 (Claude 등 AI 에이전트에서 호출)
+
+카탈로그의 8개 화면을 **MCP 툴로 그대로 노출**합니다. 각 엔드포인트의 `"params"`
+메타데이터가 자동으로 툴 인자 스키마(JSON-Schema)가 되므로, 엔드포인트를 추가하면
+툴도 자동으로 늘어납니다.
+
+```bash
+pip install -e ".[mcp]"                 # mcp SDK 포함 설치
+python -m krx_kind_data_api.mcp_server  # stdio 트랜스포트로 구동 (= krx-kind-mcp)
+```
+
+Claude Desktop / Claude Code 등록(`claude_desktop_config.json` 또는 mcp 설정):
+
+```json
+{
+  "mcpServers": {
+    "krx-kind": {
+      "command": "python",
+      "args": ["-m", "krx_kind_data_api.mcp_server"]
+    }
+  }
+}
+```
+
+- 툴 이름은 `kind_<엔드포인트>` (예: `kind_pubofr_prog_com`).
+- 인자는 `endpoints.py`의 `"params"`에서 생성 — `desc`/`enum`/`example`/`required` 반영.
+- 결과는 `{endpoint, rows, columns, truncated, records}` JSON(기본 최대 500행).
+- 구현/설계: [krx_kind_data_api/mcp_server.py](krx_kind_data_api/mcp_server.py).
+  순수 로직(스키마·디스패치)과 서버 구동이 분리돼 있어 mcp 미설치로도 테스트됩니다.
 
 ### 새 화면을 API로 추가
 
@@ -52,8 +85,10 @@ krx_kind_data_api/
 ├── endpoints.py   화면 카탈로그 (여기에 한 줄 추가하면 새 API)
 ├── parsers.py     HTML→DataFrame 파서 레지스트리 (read_html / kind_list_with_code / today_disclosure / corp_list)
 ├── client.py      fetch() — defaults 머지 + required 검증 + 파서 적용
+├── mcp_server.py  MCP 서버 — params 메타 → 툴 스키마 자동 생성 (optional: pip install .[mcp])
 └── exceptions.py
 tests/test_endpoints_live.py   라이브 테스트 (KIND_SKIP_LIVE=1로 스킵)
+tests/test_mcp_server.py       MCP 순수 로직 테스트 (mcp 미설치에서도 동작)
 ```
 
 ---
