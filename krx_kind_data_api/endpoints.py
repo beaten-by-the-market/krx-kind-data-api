@@ -45,6 +45,107 @@ def _spac_merge_prepare(p: dict) -> dict:
     return p
 
 
+# ── 공시 상세검색(details.do) 공시유형 매핑 ────────────────────────────
+# details.do는 공시유형을 "카테고리 탭(01~20) + 세부코드"로 필터한다.
+# 필터를 켜려면 해당 카테고리 필드에 값을 넣어야 한다:
+#     disclosureType{cat}     = "code|"   (파이프로 끝나는 코드 나열)
+#     pDisclosureType{cat}    = "code|"   (동일)
+#     disclosureTypeArr{cat}  = "code"    (배열 형태)
+#     bfrDsclsType            = "on"
+# cat(카테고리 탭 인덱스)은 세부코드에서 유추되지 않으므로 아래 매핑으로 관리한다.
+#
+# 카테고리 탭 인덱스(브라우저 폼 disclosureType{NN} 기준):
+#   01 수시공시 / 02 시장조치 / 03 공정공시 / 04 신고사항 / 05 채권공시 /
+#   06 채권시장조치 / 07 경기공시 / 08 특수공시 / 09 발행공시 / 10 지분공시 /
+#   11 워런트공시 / 13 ETN공시 / 14 의결권공시 / 20 공정위공시
+#
+# 확장 방법: 브라우저에서 원하는 유형을 체크하고 details.do POST 폼을 캡처해
+#   disclosureType{NN}=코드| 와 disclosureTypeArr{NN}=코드 를 확인한 뒤 아래 dict에
+#   {"친절한키": {"cat": "NN", "code": "코드"}} 한 줄을 추가하면 된다.
+DISCLOSURE_TYPE_CODES = {
+    # 공정공시(03) > 매출액 영업손익 등 영업실적
+    "공정공시_영업실적": {"cat": "03", "code": "0204"},
+}
+
+# details.do 폼에 존재하는 공시유형 카테고리 탭 인덱스(12·15~19는 폼에 없음).
+_DETAIL_DISC_CATS = ["01", "02", "03", "04", "05", "06", "07", "08",
+                     "09", "10", "11", "13", "14", "20"]
+
+
+def _disclosure_details_defaults() -> dict:
+    """details.do가 기대하는 전체 폼 필드를 빈값으로 채운 defaults 생성."""
+    d = {
+        # ── 화면 내부 고정값 ──
+        "method": "searchDetailsSub",
+        "forward": "details_sub",
+        # ── 페이지네이션 / 정렬 ──
+        # 화면 드롭다운은 15/30/50/100만 제공. 100 초과는 서버가 무시할 수 있으니
+        # 전량이 필요하면 pageIndex로 페이지를 넘긴다(전체 건수는 결과 페이징에 표시).
+        "currentPageSize": "100",
+        "pageIndex": "1",
+        "orderMode": "1",
+        "orderStat": "D",
+        # ── 검색 조건(빈값 = 전체) ──
+        "searchCodeType": "",
+        "repIsuSrtCd": "",
+        "allRepIsuSrtCd": "",
+        "oldSearchCorpName": "",
+        "disclosureType": "",       # raw 빈 필드(친절한 disclosureType 파라미터와 별개)
+        "disTypevalue": "",
+        "reportNm": "",
+        "reportCd": "",
+        "searchCorpName": "",       # 회사명(부분일치) 또는 종목코드
+        "business": "",
+        "marketType": "",           # 빈값=전체 / 1=유가(코스피) / 2=코스닥
+        "kosdaqSegment": "",
+        "settlementMonth": "",
+        "securities": "",
+        "submitOblgNm": "",
+        "enterprise": "",
+        "reportNmTemp": "",
+        "reportNmPop": "",
+        "bfrDsclsType": "on",
+        "fromDate": "2000-01-01",
+    }
+    for cat in _DETAIL_DISC_CATS:
+        d[f"disclosureType{cat}"] = ""
+        d[f"pDisclosureType{cat}"] = ""
+    return d
+
+
+def _disclosure_details_prepare(p: dict) -> dict:
+    """친절한 disclosureType(키 또는 'cat:code') → 카테고리별 raw 필드로 전개.
+
+    - disclosureType 이 DISCLOSURE_TYPE_CODES 의 키면 그 cat/code 사용.
+    - 'cat:code'(예: '03:0204') 형태면 그대로 파싱해 사용(매핑에 없는 유형 즉석 지정).
+    - 값이 없으면 공시유형 필터 없이 전체 조회.
+    """
+    from .exceptions import KINDFetchError
+
+    key = (p.pop("disclosureType", "") or "").strip()
+    cat = (p.pop("disclosureTypeCat", "") or "").strip()
+    code = (p.pop("disclosureTypeCode", "") or "").strip()
+    if key:
+        spec = DISCLOSURE_TYPE_CODES.get(key)
+        if spec is not None:
+            cat, code = spec["cat"], spec["code"]
+        elif ":" in key:
+            cat, code = (x.strip() for x in key.split(":", 1))
+        else:
+            raise KINDFetchError(
+                f"Unknown disclosureType {key!r}. "
+                f"Available keys: {sorted(DISCLOSURE_TYPE_CODES)} "
+                f"or use 'cat:code' form (예: '03:0204')."
+            )
+    if cat and code:
+        p[f"disclosureType{cat}"] = f"{code}|"
+        p[f"pDisclosureType{cat}"] = f"{code}|"
+        p[f"disclosureTypeArr{cat}"] = code
+    # 친절한 파라미터를 소비했으니 raw 빈 필드를 복원(폼이 기대).
+    p["disclosureType"] = ""
+    return p
+
+
 ENDPOINTS = {
     # ── 종목 마스터 ────────────────────────────────────────────────
     "corp_list": {
@@ -534,6 +635,59 @@ ENDPOINTS = {
             "pageIndex": {
                 "kind": "paging", "required": False, "example": "1",
                 "desc": "페이지 번호(1부터).",
+            },
+        },
+    },
+    "disclosure_details": {
+        "path": "disclosure/details.do",
+        "http": "post",
+        "send_as": "data",
+        "parser": "disclosure_details",
+        "prepare": _disclosure_details_prepare,   # disclosureType → 카테고리 raw 필드
+        "defaults": _disclosure_details_defaults(),
+        "required": ["toDate"],
+        "screen": "공시 상세검색. disclosureType로 공시유형 필터(예 '공정공시_영업실적'), "
+                  "marketType로 시장(1=유가/2=코스닥), fromDate~toDate 기간 조회. "
+                  "총 건수는 많을 수 있으니 currentPageSize(≤100)+pageIndex로 페이지네이션.",
+        "params": {
+            "disclosureType": {
+                "kind": "filter", "required": False, "example": "공정공시_영업실적",
+                "enum": ["공정공시_영업실적"],
+                "desc": "공시유형 필터. 등록된 키('공정공시_영업실적'=공정공시>매출액 영업손익 등 "
+                        "영업실적) 또는 'cat:code' 형태(예 '03:0204')로 직접 지정. "
+                        "생략 시 전체 유형. 새 유형은 endpoints.DISCLOSURE_TYPE_CODES에 추가.",
+            },
+            "toDate": {
+                "kind": "date", "required": True, "format": "YYYY-MM-DD",
+                "example": "2026-07-15", "desc": "조회 종료일(공시일 상한). 필수.",
+            },
+            "fromDate": {
+                "kind": "date", "required": False, "format": "YYYY-MM-DD",
+                "example": "2025-07-15",
+                "desc": "조회 시작일(공시일 하한). 생략 시 2000-01-01. "
+                        "브라우저 기본은 종료일 기준 1년 전.",
+            },
+            "marketType": {
+                "kind": "filter", "required": False, "example": "1",
+                "enum": ["1", "2"],
+                "desc": "시장 구분. 1=유가증권(코스피) / 2=코스닥. 생략 시 전체 시장.",
+            },
+            "searchCorpName": {
+                "kind": "filter", "required": False, "example": "삼성전자",
+                "desc": "회사명(부분일치) 또는 종목코드로 필터. 빈값이면 전체.",
+            },
+            "currentPageSize": {
+                "kind": "paging", "required": False, "example": "100",
+                "desc": "한 페이지 행 수. 화면 최대는 100(초과는 서버가 무시할 수 있음). "
+                        "전량은 pageIndex로 페이지를 넘겨 수집.",
+            },
+            "pageIndex": {
+                "kind": "paging", "required": False, "example": "1",
+                "desc": "페이지 번호(1부터).",
+            },
+            "orderStat": {
+                "kind": "sort", "required": False, "example": "D",
+                "desc": "정렬 방향. D=공시일 내림차순(최신순) / A=오름차순.",
             },
         },
     },

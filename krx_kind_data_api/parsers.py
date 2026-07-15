@@ -125,6 +125,62 @@ def today_disclosure(html: str, **_: Any) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
+    """공시 상세검색(details.do) 전용.
+
+    todaydisclosure.do와 표 클래스는 같지만(list type-00 mt10) 맨 앞에 '번호' 열이
+    하나 더 있어 컬럼 오프셋이 다르다. 회사코드는 회사 셀의
+    companysummary_open('04270'), 공시 원문 접수번호는 공시제목 셀의
+    openDisclsViewer('20260714000204','')에서 뽑는다. 시장(유가/코스닥)은 회사 셀의
+    아이콘 alt에서 읽는다.
+    """
+    from .transport import disclosure_viewer_url
+
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", class_="list type-00 mt10") or soup.find("table")
+    if table is None or not table.find("tbody"):
+        raise KINDParseError("공시 상세검색 테이블을 찾지 못함")
+
+    rows = []
+    for tr in table.find("tbody").find_all("tr"):
+        cols = tr.find_all("td")
+        if len(cols) < 5:  # 번호/시간/회사명/공시제목/제출인(+차트) 최소 5열
+            continue
+        # 회사 셀: 시장 아이콘 alt + companysummary_open('회사코드')
+        corp_cell = cols[2]
+        market_img = corp_cell.find("img", class_="legend")
+        market = market_img["alt"].strip() if (market_img and market_img.has_attr("alt")) else ""
+        corp_a = corp_cell.find("a")
+        code = ""
+        if corp_a is not None and corp_a.has_attr("onclick"):
+            m = _CODE_RE.search(corp_a["onclick"])
+            code = m.group(1) if m else ""
+        corp_name = corp_a.text.strip() if corp_a is not None else corp_cell.text.strip()
+        # 공시제목 셀: openDisclsViewer('접수번호','')
+        title_a = cols[3].find("a")
+        title = (title_a.get("title", "").strip() if title_a else cols[3].text.strip())
+        acptno, url = "", ""
+        if title_a is not None and title_a.has_attr("onclick"):
+            m = re.search(r"openDisclsViewer\('(\d+)'", title_a["onclick"])
+            if m:
+                acptno = m.group(1)
+                url = disclosure_viewer_url(acptno)
+        rows.append(
+            {
+                "번호": cols[0].text.strip(),
+                "시간": cols[1].text.strip(),
+                "시장": market,
+                "회사코드": code,
+                "회사명": corp_name,
+                "공시제목": title,
+                "접수번호": acptno,
+                "제출인": cols[4].text.strip(),
+                "상세URL": url,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _pad6(code: Any) -> str:
     """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다."""
     s = str(code).strip()
@@ -143,6 +199,7 @@ _PARSERS: dict[str, Callable[..., pd.DataFrame]] = {
     "read_html": read_html,
     "kind_list_with_code": kind_list_with_code,
     "today_disclosure": today_disclosure,
+    "disclosure_details": disclosure_details,
     "corp_list": corp_list,
 }
 
