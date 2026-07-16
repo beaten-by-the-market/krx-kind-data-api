@@ -19,7 +19,14 @@ endpoints.ENDPOINTS 에 dict 한 줄 추가 → 바로 fetch("새이름") 가능
 
 from .client import fetch, list_endpoints, endpoint_info
 from .parsers import register_parser, get_parser
-from .transport import disclosure_viewer_url, MARKETS, BASE
+from .transport import (
+    disclosure_viewer_url,
+    disclosure_content_url,
+    disclosure_content_id,
+    disclosure_content_html,
+    MARKETS,
+    BASE,
+)
 from .exceptions import (
     KINDError,
     KINDFetchError,
@@ -34,6 +41,9 @@ __all__ = [
     "register_parser",
     "get_parser",
     "disclosure_viewer_url",
+    "disclosure_content_url",
+    "disclosure_content_id",
+    "disclosure_content_html",
     "MARKETS",
     "BASE",
     "KINDError",

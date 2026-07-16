@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 mcp = ["mcp>=1.0"]
+selenium = ["selenium>=4"]
 
 [project.scripts]
 krx-kind-mcp = "krx_kind_data_api.mcp_server:main"

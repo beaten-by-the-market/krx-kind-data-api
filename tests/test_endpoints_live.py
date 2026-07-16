@@ -45,6 +45,7 @@ def test_catalog_has_core_endpoints():
         "merge_listing",
         "pubofr_prog_com",
         "today_disclosure",
+        "disclosure_details",
     ):
         assert required in names
 
@@ -183,6 +184,42 @@ def test_spac_merge_listing_columns():
     for col in ("회사명", "합병상장일", "상장유형", "액면가", "공모가",
                 "공모금액", "주요제품", "최초상장주식수", "회사코드"):
         assert col in df.columns
+
+
+# ── 공시 본문(iframe) 실제 URL (disclosure_content_url) ──────────────
+
+def test_content_url_jamjeong_separate():
+    from krx_kind_data_api import disclosure_content_url
+
+    url = disclosure_content_url("20260629000856", basis="separate")
+    assert url.endswith("/99620.htm")
+    assert "/external/2026/06/29/000856/" in url   # 슬롯4=접수번호 seq(종목코드 아님)
+
+
+def test_content_id_differs_from_acptno():
+    from krx_kind_data_api import disclosure_content_id
+
+    acpt = "20260629000856"
+    cid = disclosure_content_id(acpt)
+    assert cid.isdigit() and len(cid) == 14
+    assert cid != acpt          # content_id ≠ 접수번호
+
+
+def test_content_url_requires_docno_or_basis():
+    from krx_kind_data_api import disclosure_content_url
+
+    with pytest.raises(ValueError):
+        disclosure_content_url("20260629000856")
+
+
+def test_content_html_fetch():
+    import requests
+    from krx_kind_data_api import disclosure_content_url
+
+    url = disclosure_content_url("20260629000856", basis="separate")
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+    assert r.status_code == 200
+    assert "실적" in r.content.decode("utf-8", "replace")
 
 
 def test_endpoint_info_roundtrip():
