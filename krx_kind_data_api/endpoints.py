@@ -168,39 +168,63 @@ ENDPOINTS = {
     "stock_issue_list": {
         "path": "corpgeneral/stockissuelist.do",
         "http": "post",
-        "send_as": "params",
-        "parser": "read_html",
+        "send_as": "data",
+        "parser": "stock_issue_list",   # 회사코드+접수번호 둘 다 추출(전용 파서)
         "defaults": {
+            # ── 화면 내부 고정값 ──
             "method": "searchStockIssueList",
             "forward": "searchStockIssueList",
+            "searchMode": "",
+            "searchCodeType": "",
+            # ── 페이지네이션 / 정렬 ──
             "pageIndex": "1",
-            "currentPageSize": "5000",
+            "currentPageSize": "5000",   # ≈전량. 화면 기본은 15
             "orderMode": "1",
             "orderStat": "D",
+            # ── 필터(빈값 = 전체) ──
+            "marketType": "all",         # all=전체 / 1=코스피 / 2=코스닥 계열
+            "listingType": "",           # 빈값=전체 (2 추가/3 변경/4 신규/5 재상장)
+            "searchCorpName": "",        # 회사명(부분일치) 또는 종목코드
+            "comAbbrv": "",
+            "repIsuSrtCd": "",
+            "repIsuCd": "",
+            "isurCd": "",
+            "bzProcsNo": "",
+            "paxreq": "",
+            "outsvcno": "",
             "fromDate": "2000-01-01",
         },
-        "required": ["marketType", "toDate"],
-        "screen": "증자(주식발행) 현황. marketType, listingType, fromDate~toDate",
+        "required": ["toDate"],
+        "screen": "증자·상장방식별 주식발행 현황(추가/변경/신규/재상장). "
+                  "marketType(all/1/2), listingType로 유형 필터, fromDate~toDate. "
+                  "반환: 회사명·상장(예정)일·상장방식·발행주식수·액면가·발행사유·회사코드·접수번호·상세URL",
         "params": {
-            "marketType": {
-                "kind": "filter", "required": True, "example": "1",
-                "desc": "시장 구분 코드(화면 검색조건). 1=코스피 / 2=코스닥 계열. 필수.",
-            },
             "toDate": {
                 "kind": "date", "required": True, "format": "YYYY-MM-DD",
-                "example": "2026-07-02", "desc": "조회 종료일. 필수.",
+                "example": "2026-07-21", "desc": "조회 종료일(상장예정일 기준 상한). 필수.",
             },
             "fromDate": {
                 "kind": "date", "required": False, "format": "YYYY-MM-DD",
-                "example": "2000-01-01", "desc": "조회 시작일. 생략 시 2000-01-01.",
+                "example": "2026-04-21", "desc": "조회 시작일. 생략 시 2000-01-01.",
             },
             "listingType": {
-                "kind": "filter", "required": False, "example": "",
-                "desc": "발행(증자) 유형 필터. 빈값이면 전체.",
+                "kind": "filter", "required": False, "example": "4",
+                "enum": ["", "2", "3", "4", "5"],
+                "desc": "상장방식(발행유형) 필터. 빈값=전체 / 2=추가상장 / 3=변경상장(감자·병합·소각 등) / "
+                        "4=신규상장 / 5=재상장.",
+            },
+            "marketType": {
+                "kind": "filter", "required": False, "example": "all",
+                "enum": ["all", "1", "2"],
+                "desc": "시장 구분. all=전체(기본) / 1=코스피 / 2=코스닥 계열.",
+            },
+            "searchCorpName": {
+                "kind": "filter", "required": False, "example": "삼성전자",
+                "desc": "회사명(부분일치) 또는 종목코드로 필터. 빈값이면 전체.",
             },
             "currentPageSize": {
                 "kind": "paging", "required": False, "example": "5000",
-                "desc": "최대 반환 행 수. 기본 5000.",
+                "desc": "최대 반환 행 수. 기본 5000≈전량.",
             },
             "pageIndex": {
                 "kind": "paging", "required": False, "example": "1",
@@ -208,7 +232,7 @@ ENDPOINTS = {
             },
             "orderStat": {
                 "kind": "sort", "required": False, "example": "D",
-                "desc": "정렬 방향. D=내림차순 / A=오름차순.",
+                "desc": "정렬 방향. D=상장(예정)일 내림차순(최신순) / A=오름차순.",
             },
         },
     },

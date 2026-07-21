@@ -72,6 +72,28 @@ def test_merge_listing_has_code_column():
     assert "회사코드" in df.columns
 
 
+def test_stock_issue_list_shape_and_codes():
+    # 변경상장(3) — 회사코드(5자리 이하)와 접수번호(14자리)를 각각 뽑는지
+    df = fetch("stock_issue_list", marketType="all", listingType="3",
+               fromDate="2026-04-21", toDate="2026-07-21", currentPageSize="15")
+    assert isinstance(df, pd.DataFrame) and len(df) > 0
+    for col in ("회사명", "상장(예정)일", "상장방식", "발행주식수", "액면가",
+                "발행사유", "회사코드", "접수번호", "상세URL"):
+        assert col in df.columns
+    assert set(df["상장방식"]) == {"변경상장"}          # listingType=3 필터 확인
+    assert df["회사코드"].str.len().max() <= 6           # companysummary_open 코드
+    assert (df["접수번호"].str.len() == 14).all()        # fnDetailView acptno
+
+
+def test_stock_issue_list_type_partition():
+    # 전체 = 추가+변경+신규 (재상장은 해당 기간 0건일 수 있음)
+    def n(lt):
+        return len(fetch("stock_issue_list", marketType="all", listingType=lt,
+                         fromDate="2026-04-21", toDate="2026-07-21",
+                         currentPageSize="3000"))
+    assert n("") == n("2") + n("3") + n("4") + n("5")
+
+
 def test_today_disclosure_shape():
     df = fetch("today_disclosure", marketType=1, selDate=TODAY)
     assert isinstance(df, pd.DataFrame)

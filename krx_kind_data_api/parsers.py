@@ -181,6 +181,55 @@ def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def stock_issue_list(html: str, **_: Any) -> pd.DataFrame:
+    """증자·상장방식별 주식발행 현황(stockissuelist.do) 전용.
+
+    이 화면은 코드가 두 군데에 있다:
+      - 회사코드: 회사 셀의 companysummary_open('01100')  (5자리)
+      - 접수번호: 행(<tr>) onclick fnDetailView('20260715000647')  (14자리, 공시 링크)
+    범용 kind_list_with_code는 행 onclick(fnDetailView)을 먼저 잡아 회사코드 대신
+    접수번호를 넣어버리므로 전용 파서로 둘 다 뽑는다. 결과 없음 플레이스홀더
+    행(colspan 1개 td)은 컬럼 수로 걸러진다.
+    """
+    from .transport import disclosure_viewer_url
+
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", class_="list type-00") or soup.find("table")
+    if table is None or not table.find("tbody"):
+        raise KINDParseError("증자현황 테이블을 찾지 못함")
+
+    rows = []
+    for tr in table.find("tbody").find_all("tr"):
+        cols = tr.find_all("td")
+        if len(cols) < 6:   # 데이터 행은 6열. '조회된 결과값이 없습니다' 등은 스킵
+            continue
+        # 회사코드: 회사 셀의 companysummary_open('01100')
+        code = ""
+        corp_a = cols[0].find("a")
+        if corp_a is not None and corp_a.has_attr("onclick"):
+            m = re.search(r"companysummary_open\('([A-Za-z0-9]+)'", corp_a["onclick"])
+            code = m.group(1) if m else ""
+        # 접수번호: 행 onclick fnDetailView('20260715000647')
+        acptno = ""
+        if tr.has_attr("onclick"):
+            m = re.search(r"fnDetailView\('(\d+)'", tr["onclick"])
+            acptno = m.group(1) if m else ""
+        rows.append(
+            {
+                "회사명": cols[0].get_text(strip=True),
+                "상장(예정)일": cols[1].get_text(strip=True),
+                "상장방식": cols[2].get_text(strip=True),
+                "발행주식수": cols[3].get_text(strip=True),
+                "액면가": cols[4].get_text(strip=True),
+                "발행사유": cols[5].get_text(strip=True),
+                "회사코드": code,
+                "접수번호": acptno,
+                "상세URL": disclosure_viewer_url(acptno) if acptno else "",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _pad6(code: Any) -> str:
     """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다."""
     s = str(code).strip()
@@ -200,6 +249,7 @@ _PARSERS: dict[str, Callable[..., pd.DataFrame]] = {
     "kind_list_with_code": kind_list_with_code,
     "today_disclosure": today_disclosure,
     "disclosure_details": disclosure_details,
+    "stock_issue_list": stock_issue_list,
     "corp_list": corp_list,
 }
 
