@@ -194,7 +194,10 @@ ENDPOINTS = {
             "currentPageSize": "3000",   # ≈전량
             "pageIndex": "1",
             "mktId": "STK",              # STK=유가 / KSQ=코스닥 / KNX=코넥스
-            "secugrpId": "ST",           # ST=주권 / FS=외국주권
+            "secugrpId": "ST",           # ST=주권 / FS=외국주권 / MF=투자회사 등
+            # detailType=1: 회사 단위(구분·시장구분·회사명·종목코드 6자리·상장일·상장주식수).
+            # 모든 secugrpId에서 이 통일 스키마로 나온다. (detailType=2는 종목 단위 +
+            # 종목명·ISIN 12자리로 스키마가 달라지므로 쓰지 않는다.)
             "detailType": "1",
         },
         "required": [],   # selDate는 prepare가 오늘로 채움
@@ -215,7 +218,10 @@ ENDPOINTS = {
             },
             "secugrpId": {
                 "kind": "filter", "required": False, "example": "ST",
-                "desc": "증권 구분. ST=주권 / FS=외국주권(그 밖에 EF ETF, EN ETN 등도 있음). 기본 ST.",
+                "desc": "증권 구분. ST=주권(보통주) / FS=외국주권 / MF=투자회사 / "
+                        "DR=주식예탁증권 / SW=신주인수권증권 / BC=수익증권 / "
+                        "SP=기업인수목적회사(스팩). "
+                        "(부동산투자회사·ELW·ETN·ETF 등도 별도 코드가 있음). 기본 ST.",
             },
             "currentPageSize": {
                 "kind": "paging", "required": False, "example": "3000",

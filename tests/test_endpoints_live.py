@@ -120,6 +120,29 @@ def test_listed_issue_seldate_prepare_normalizes():
     assert len(got) == 8 and got.isdigit()
 
 
+def test_pad6_handles_float_and_nan():
+    # 결측 섞인 숫자 컬럼(float '30660.0')·NaN 정규화 (네트워크 불필요)
+    from krx_kind_data_api.parsers import _pad6
+
+    assert _pad6("30660.0") == "030660"   # float 표기 → 6자리
+    assert _pad6(66970) == "066970"
+    assert _pad6("nan") == "" and _pad6("") == ""
+    assert _pad6("0117P0") == "0117P0"    # 문자 섞인 코드는 그대로
+
+
+def test_listed_issue_various_secugrp_uniform_schema():
+    # detailType=1이면 여러 secugrpId가 통일 6컬럼으로 나온다
+    cols = ["구분", "시장구분", "회사명", "종목코드", "상장일", "상장주식수(천주)"]
+    for mkt, secu in [("STK", "MF"), ("STK", "BC"), ("KSQ", "SP")]:
+        df = fetch("listed_issue_status", selDate="2026-07-21",
+                   mktId=mkt, secugrpId=secu)
+        assert list(df.columns) == cols, (mkt, secu)
+        # 종목코드는 6자리(스팩 등 문자 포함 가능)이거나 결측('')만 —
+        # float('30660.0')/'nan' 잔재가 없어야 함
+        assert df["종목코드"].map(lambda s: len(s) in (0, 6)).all(), (mkt, secu)
+        assert not df["종목코드"].str.contains(r"\.|nan", case=False).any(), (mkt, secu)
+
+
 def test_admin_issue_shape_and_market_partition():
     df = fetch("admin_issue")
     assert isinstance(df, pd.DataFrame) and len(df) > 0

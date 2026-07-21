@@ -276,8 +276,16 @@ def labeled_table(
 
 
 def _pad6(code: Any) -> str:
-    """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다."""
+    """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다.
+
+    결측이 섞인 숫자 컬럼은 pandas가 float로 읽어 '30660.0'처럼 들어오므로
+    끝의 '.0'을 떼고, NaN/빈값은 ''로 정규화한다.
+    """
     s = str(code).strip()
+    if s.endswith(".0"):        # float 표기(NaN 섞인 숫자 컬럼)
+        s = s[:-2]
+    if not s or s.lower() == "nan":
+        return ""
     return f"{int(s):06d}" if s.isdigit() else s
 
 
