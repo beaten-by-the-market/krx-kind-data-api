@@ -275,6 +275,27 @@ def labeled_table(
     return pd.DataFrame(rows, columns=list(columns))
 
 
+def listed_issue_summary(html: str, **_: Any) -> pd.DataFrame:
+    """상장종목현황 시장 전체 집계(listedIssueStatus.do) 전용.
+
+    유가증권/코스닥/코넥스 3개 표를 하나로 합치고, 각 표의 <caption>(시장명)을
+    '시장' 컬럼으로 붙인다. 각 표 컬럼: 구분·회사수·종목수·상장주식수(천주)·
+    자본금(백만원)·시가총액(백만원). '소계' 행도 그대로 둔다.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table")
+    if not tables:
+        raise KINDParseError("상장종목현황 집계 테이블을 찾지 못함")
+    parts = []
+    for t in tables:
+        cap = t.find("caption")
+        market = cap.get_text(strip=True) if cap else ""
+        df = read_html(str(t), table_index=0, header=0)
+        df.insert(0, "시장", market)
+        parts.append(df)
+    return pd.concat(parts, ignore_index=True)
+
+
 def _pad6(code: Any) -> str:
     """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다.
 
@@ -304,6 +325,7 @@ _PARSERS: dict[str, Callable[..., pd.DataFrame]] = {
     "disclosure_details": disclosure_details,
     "stock_issue_list": stock_issue_list,
     "labeled_table": labeled_table,
+    "listed_issue_summary": listed_issue_summary,
     "corp_list": corp_list,
 }
 

@@ -48,6 +48,7 @@ def test_catalog_has_core_endpoints():
         "disclosure_details",
         "admin_issue",
         "listed_issue_status",
+        "listed_issue_summary",
     ):
         assert required in names
 
@@ -118,6 +119,45 @@ def test_listed_issue_seldate_prepare_normalizes():
     assert _listed_issue_prepare({"selDate": "2026-07-21"})["selDate"] == "20260721"
     got = _listed_issue_prepare({})["selDate"]
     assert len(got) == 8 and got.isdigit()
+
+
+def test_listed_summary_prepare_normalizes_dashes():
+    # 집계 화면은 YYYY-MM-DD(대시 포함) 요구 (네트워크 불필요)
+    from krx_kind_data_api.endpoints import _listed_summary_prepare
+
+    assert _listed_summary_prepare({"selDate": "20260721"})["selDate"] == "2026-07-21"
+    assert _listed_summary_prepare({"selDate": "2026-07-21"})["selDate"] == "2026-07-21"
+    got = _listed_summary_prepare({})["selDate"]
+    assert len(got) == 10 and got.count("-") == 2
+
+
+def test_listed_issue_summary_shape():
+    df = fetch("listed_issue_summary", selDate="2026-07-21")
+    assert list(df.columns) == [
+        "시장", "구분", "회사수", "종목수",
+        "상장주식수(천주)", "자본금(백만원)", "시가총액(백만원)",
+    ]
+    assert {"유가증권시장", "코스닥시장", "코넥스시장"} <= set(df["시장"])
+    assert "소계" in set(df["구분"])
+
+
+def test_summary_hoesu_matches_detail_rowcount():
+    # 집계의 회사수 == 상세목록 행수 (대표 3건만 확인)
+    D = "2026-07-21"
+    summ = fetch("listed_issue_summary", selDate=D)
+
+    def hoesu(market, gubun):
+        row = summ[(summ["시장"] == market) & (summ["구분"] == gubun)].iloc[0]
+        return int(row["회사수"])
+
+    cases = [
+        ("유가증권시장", "주권", "STK", "ST"),
+        ("코스닥시장", "기업인수목적회사", "KSQ", "SP"),
+        ("코넥스시장", "주권", "KNX", "ST"),
+    ]
+    for market, gubun, mkt, secu in cases:
+        detail = fetch("listed_issue_status", selDate=D, mktId=mkt, secugrpId=secu)
+        assert hoesu(market, gubun) == len(detail), (market, gubun)
 
 
 def test_pad6_handles_float_and_nan():

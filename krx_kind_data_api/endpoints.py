@@ -62,6 +62,22 @@ def _spac_merge_prepare(p: dict) -> dict:
 # 확장 방법: 브라우저에서 원하는 유형을 체크하고 details.do POST 폼을 캡처해
 #   disclosureType{NN}=코드| 와 disclosureTypeArr{NN}=코드 를 확인한 뒤 아래 dict에
 #   {"친절한키": {"cat": "NN", "code": "코드"}} 한 줄을 추가하면 된다.
+def _listed_summary_prepare(p: dict) -> dict:
+    """selDate를 YYYY-MM-DD(대시 포함)로 정규화, 미지정 시 오늘.
+
+    집계 화면(listedIssueStatus.do)은 상세(listedissuestatusdetail.do)와 달리
+    selDate에 대시를 요구한다. YYYYMMDD로 줘도 대시를 넣어 맞춘다.
+    """
+    from datetime import datetime
+
+    digits = str(p.get("selDate") or "").replace("-", "").strip()
+    if len(digits) == 8 and digits.isdigit():
+        p["selDate"] = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    else:
+        p["selDate"] = datetime.today().strftime("%Y-%m-%d")
+    return p
+
+
 def _listed_issue_prepare(p: dict) -> dict:
     """selDate 정규화: YYYY-MM-DD 등 대시 제거 → YYYYMMDD, 미지정 시 오늘로 채움.
 
@@ -230,6 +246,28 @@ ENDPOINTS = {
             "pageIndex": {
                 "kind": "paging", "required": False, "example": "1",
                 "desc": "페이지 번호(1부터).",
+            },
+        },
+    },
+    "listed_issue_summary": {
+        "path": "corpgeneral/listedIssueStatus.do",
+        "http": "post",
+        "send_as": "data",
+        "parser": "listed_issue_summary",
+        "prepare": _listed_summary_prepare,   # selDate → YYYY-MM-DD(대시 포함)
+        "defaults": {
+            "method": "readListedIssueStatus",
+        },
+        "required": [],   # selDate는 prepare가 오늘로 채움
+        "screen": "상장종목현황 시장 전체 집계(유가·코스닥·코넥스). 증권구분별 "
+                  "회사수·종목수·상장주식수·자본금·시가총액. listed_issue_status(상세 목록)의 "
+                  "상위 요약. 반환: 시장·구분·회사수·종목수·상장주식수(천주)·자본금(백만원)·시가총액(백만원)",
+        "params": {
+            "selDate": {
+                "kind": "date", "required": False, "format": "YYYY-MM-DD",
+                "example": "2026-07-21",
+                "desc": "조회 기준일. YYYY-MM-DD 또는 YYYYMMDD 모두 허용(내부 정규화). "
+                        "생략 시 오늘. 휴장일은 직전 영업일 기준.",
             },
         },
     },
