@@ -47,6 +47,7 @@ def test_catalog_has_core_endpoints():
         "today_disclosure",
         "disclosure_details",
         "admin_issue",
+        "listed_issue_status",
     ):
         assert required in names
 
@@ -93,6 +94,30 @@ def test_stock_issue_list_type_partition():
                          fromDate="2026-04-21", toDate="2026-07-21",
                          currentPageSize="3000"))
     assert n("") == n("2") + n("3") + n("4") + n("5")
+
+
+def test_listed_issue_status_markets_and_seldate_norm():
+    # selDate를 대시 포함으로 줘도 정규화되어 동작(내부 YYYYMMDD)
+    st = fetch("listed_issue_status", selDate="2026-07-21", mktId="STK", secugrpId="ST")
+    assert isinstance(st, pd.DataFrame) and len(st) > 100
+    assert list(st.columns) == ["구분", "시장구분", "회사명", "종목코드", "상장일", "상장주식수(천주)"]
+    assert st["종목코드"].str.len().eq(6).all()   # 6자리 정규화
+    assert set(st["구분"]) == {"주권"}
+    # 외국주권 필터
+    fs = fetch("listed_issue_status", selDate="2026-07-21", mktId="STK", secugrpId="FS")
+    assert set(fs["구분"]) <= {"외국주권"}
+    # 코스닥 시장
+    ksq = fetch("listed_issue_status", selDate="2026-07-21", mktId="KSQ", secugrpId="ST")
+    assert set(ksq["시장구분"]) == {"코스닥"}
+
+
+def test_listed_issue_seldate_prepare_normalizes():
+    # prepare 훅: 대시 제거, 미지정 시 오늘(YYYYMMDD) (네트워크 불필요)
+    from krx_kind_data_api.endpoints import _listed_issue_prepare
+
+    assert _listed_issue_prepare({"selDate": "2026-07-21"})["selDate"] == "20260721"
+    got = _listed_issue_prepare({})["selDate"]
+    assert len(got) == 8 and got.isdigit()
 
 
 def test_admin_issue_shape_and_market_partition():

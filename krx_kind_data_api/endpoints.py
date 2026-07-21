@@ -62,6 +62,21 @@ def _spac_merge_prepare(p: dict) -> dict:
 # 확장 방법: 브라우저에서 원하는 유형을 체크하고 details.do POST 폼을 캡처해
 #   disclosureType{NN}=코드| 와 disclosureTypeArr{NN}=코드 를 확인한 뒤 아래 dict에
 #   {"친절한키": {"cat": "NN", "code": "코드"}} 한 줄을 추가하면 된다.
+def _listed_issue_prepare(p: dict) -> dict:
+    """selDate 정규화: YYYY-MM-DD 등 대시 제거 → YYYYMMDD, 미지정 시 오늘로 채움.
+
+    이 화면만 selDate가 YYYYMMDD(대시 없음)라, 다른 엔드포인트처럼 YYYY-MM-DD로
+    줘도 동작하게 정규화한다.
+    """
+    from datetime import datetime
+
+    sel = str(p.get("selDate") or "").replace("-", "").strip()
+    if not sel:
+        sel = datetime.today().strftime("%Y%m%d")
+    p["selDate"] = sel
+    return p
+
+
 DISCLOSURE_TYPE_CODES = {
     # 공정공시(03) > 매출액 영업손익 등 영업실적
     "공정공시_영업실적": {"cat": "03", "code": "0204"},
@@ -161,6 +176,54 @@ ENDPOINTS = {
                 "enum": ["stockMkt", "kosdaqMkt", "konexMkt"],
                 "desc": "시장 구분. stockMkt=코스피 / kosdaqMkt=코스닥 / konexMkt=코넥스. "
                         "생략 시 전체 시장.",
+            },
+        },
+    },
+    "listed_issue_status": {
+        "path": "corpgeneral/listedissuestatusdetail.do",
+        "http": "post",
+        "send_as": "data",
+        "encoding": "euc-kr",
+        # 응답은 .xls지만 실제로는 EUC-KR HTML 표(read_html 파싱).
+        # corp_list 파서 재사용: read_html + 종목코드 6자리 정규화.
+        "parser": "corp_list",
+        "prepare": _listed_issue_prepare,   # selDate 정규화(YYYY-MM-DD→YYYYMMDD, 기본 오늘)
+        "defaults": {
+            "method": "searchListedIssueStatDetailSub",
+            "forward": "listedissuestatdetail_down",
+            "currentPageSize": "3000",   # ≈전량
+            "pageIndex": "1",
+            "mktId": "STK",              # STK=유가 / KSQ=코스닥 / KNX=코넥스
+            "secugrpId": "ST",           # ST=주권 / FS=외국주권
+            "detailType": "1",
+        },
+        "required": [],   # selDate는 prepare가 오늘로 채움
+        "screen": "상장종목현황 상세(특정일 스냅샷, 엑셀 다운로드). "
+                  "mktId(STK/KSQ/KNX)·secugrpId(ST 주권/FS 외국주권)별 목록. "
+                  "종목수는 결과 행 수. 반환: 구분·시장구분·회사명·종목코드·상장일·상장주식수(천주)",
+        "params": {
+            "selDate": {
+                "kind": "date", "required": False, "format": "YYYYMMDD",
+                "example": "20260721",
+                "desc": "조회 기준일. YYYYMMDD 또는 YYYY-MM-DD 모두 허용(내부 정규화). "
+                        "생략 시 오늘. 휴장일은 결과가 비거나 직전 영업일 기준.",
+            },
+            "mktId": {
+                "kind": "filter", "required": False, "example": "STK",
+                "enum": ["STK", "KSQ", "KNX"],
+                "desc": "시장 구분. STK=유가증권(코스피) / KSQ=코스닥 / KNX=코넥스. 기본 STK.",
+            },
+            "secugrpId": {
+                "kind": "filter", "required": False, "example": "ST",
+                "desc": "증권 구분. ST=주권 / FS=외국주권(그 밖에 EF ETF, EN ETN 등도 있음). 기본 ST.",
+            },
+            "currentPageSize": {
+                "kind": "paging", "required": False, "example": "3000",
+                "desc": "최대 반환 행 수. 기본 3000≈전량.",
+            },
+            "pageIndex": {
+                "kind": "paging", "required": False, "example": "1",
+                "desc": "페이지 번호(1부터).",
             },
         },
     },
