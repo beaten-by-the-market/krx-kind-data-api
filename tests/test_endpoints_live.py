@@ -46,6 +46,7 @@ def test_catalog_has_core_endpoints():
         "pubofr_prog_com",
         "today_disclosure",
         "disclosure_details",
+        "admin_issue",
     ):
         assert required in names
 
@@ -92,6 +93,16 @@ def test_stock_issue_list_type_partition():
                          fromDate="2026-04-21", toDate="2026-07-21",
                          currentPageSize="3000"))
     assert n("") == n("2") + n("3") + n("4") + n("5")
+
+
+def test_admin_issue_shape_and_market_partition():
+    df = fetch("admin_issue")
+    assert isinstance(df, pd.DataFrame) and len(df) > 0
+    assert list(df.columns) == ["종목명", "지정일", "지정사유"]
+    # 전체 = 코스피(1) + 코스닥(2)
+    kospi = fetch("admin_issue", marketType="1")
+    kosdaq = fetch("admin_issue", marketType="2")
+    assert len(kospi) + len(kosdaq) == len(df)
 
 
 def test_today_disclosure_shape():

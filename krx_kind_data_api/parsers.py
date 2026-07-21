@@ -230,6 +230,39 @@ def stock_issue_list(html: str, **_: Any) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def labeled_table(
+    html: str,
+    *,
+    columns: list,
+    table_class: Optional[str] = None,
+    table_index: int = 0,
+    **_: Any,
+) -> pd.DataFrame:
+    """헤더가 비어(컬럼명은 summary 속성에만) 코드 링크도 없는 단순 목록 표.
+
+    보이는 <td>를 columns 순서로 그대로 매핑한다. 관리종목/불성실공시/상장폐지처럼
+    코드 onclick 없이 텍스트만 있는 화면용. 열 수가 columns보다 적은 행
+    ('조회된 결과값이 없습니다' 등 플레이스홀더)은 스킵한다.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    if table_class is not None:
+        table = soup.find("table", class_=table_class)
+    else:
+        tables = soup.find_all("table")
+        table = tables[table_index] if table_index < len(tables) else None
+    if table is None or not table.find("tbody"):
+        raise KINDParseError(
+            f"대상 테이블을 못 찾음 (class={table_class!r}, index={table_index})"
+        )
+    rows = []
+    for tr in table.find("tbody").find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) < len(columns):
+            continue
+        rows.append({c: cells[i].get_text(strip=True) for i, c in enumerate(columns)})
+    return pd.DataFrame(rows)
+
+
 def _pad6(code: Any) -> str:
     """종목코드 6자리 정규화. 우선주 등 문자 섞인 코드('0117P0')는 그대로 둔다."""
     s = str(code).strip()
@@ -250,6 +283,7 @@ _PARSERS: dict[str, Callable[..., pd.DataFrame]] = {
     "today_disclosure": today_disclosure,
     "disclosure_details": disclosure_details,
     "stock_issue_list": stock_issue_list,
+    "labeled_table": labeled_table,
     "corp_list": corp_list,
 }
 

@@ -715,6 +715,59 @@ ENDPOINTS = {
             },
         },
     },
+    # ── 투자유의(관리종목 등) ──────────────────────────────────────
+    "admin_issue": {
+        "path": "investwarn/adminissue.do",
+        "http": "post",
+        "send_as": "data",
+        "parser": "labeled_table",
+        "parser_kwargs": {
+            # <thead>가 비어 있고 컬럼명은 summary="종목명, 지정일, 지정사유"에만 있다.
+            "table_class": "list type-00 tmt30",
+            "columns": ["종목명", "지정일", "지정사유"],
+        },
+        "defaults": {
+            # ── 화면 내부 고정값 ──
+            "method": "searchAdminIssueSub",
+            "forward": "adminissue_sub",
+            "searchMode": "1",
+            "searchCodeType": "",
+            # ── 페이지네이션 / 정렬 ──
+            # 서버가 큰 currentPageSize를 허용(5000이면 사실상 전량).
+            "currentPageSize": "5000",
+            "pageIndex": "1",
+            "orderMode": "1",
+            "orderStat": "D",
+            # ── 필터(빈값 = 전체) ──
+            "marketType": "",          # 빈값=전체 / 1=코스피 / 2=코스닥
+            "searchCorpName": "",
+            "repIsuSrtCd": "",
+            "paxreq": "",
+            "outsvcno": "",
+        },
+        "required": [],   # 날짜 없음 — 현시점 지정 목록 스냅샷
+        "screen": "현재 관리종목 지정 목록(스냅샷). marketType로 시장 필터. "
+                  "반환: 종목명·지정일·지정사유. 코드가 필요하면 corp_list와 종목명으로 조인.",
+        "params": {
+            "marketType": {
+                "kind": "filter", "required": False, "example": "1",
+                "enum": ["", "1", "2"],
+                "desc": "시장 구분. 빈값=전체 / 1=코스피 / 2=코스닥.",
+            },
+            "currentPageSize": {
+                "kind": "paging", "required": False, "example": "5000",
+                "desc": "최대 반환 행 수. 기본 5000≈전량(서버가 큰 값 허용).",
+            },
+            "pageIndex": {
+                "kind": "paging", "required": False, "example": "1",
+                "desc": "페이지 번호(1부터).",
+            },
+            "orderStat": {
+                "kind": "sort", "required": False, "example": "D",
+                "desc": "정렬 방향. D=지정일 내림차순(최신순) / A=오름차순.",
+            },
+        },
+    },
 }
 
 
