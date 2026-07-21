@@ -129,6 +129,40 @@ def test_pubofr_prog_com_sample():
     assert str(df.loc[0, "업무처리번호"]) == "20191128000155"
 
 
+# ── 빈 결과에도 고정 컬럼 유지 (네트워크 불필요) ────────────────────
+
+def test_parsers_keep_columns_when_empty():
+    from krx_kind_data_api import parsers
+
+    cases = {
+        "today_disclosure": (
+            '<table class="list type-00 mt10"><tbody></tbody></table>',
+            ["시간", "회사코드", "회사명", "공시제목", "제출인", "상세URL"],
+        ),
+        "disclosure_details": (
+            '<table class="list type-00 mt10"><tbody></tbody></table>',
+            ["번호", "시간", "시장", "회사코드", "회사명",
+             "공시제목", "접수번호", "제출인", "상세URL"],
+        ),
+        "stock_issue_list": (
+            '<table class="list type-00"><tbody></tbody></table>',
+            ["회사명", "상장(예정)일", "상장방식", "발행주식수", "액면가",
+             "발행사유", "회사코드", "접수번호", "상세URL"],
+        ),
+    }
+    for parser_name, (html, expected) in cases.items():
+        df = getattr(parsers, parser_name)(html)
+        assert len(df) == 0
+        assert list(df.columns) == expected, parser_name
+
+    # labeled_table은 columns 인자를 그대로 스키마로 유지
+    df = parsers.labeled_table(
+        '<table class="x"><tbody></tbody></table>',
+        columns=["종목명", "지정일", "지정사유"], table_class="x",
+    )
+    assert len(df) == 0 and list(df.columns) == ["종목명", "지정일", "지정사유"]
+
+
 # ── params 메타데이터 정합성 (네트워크 불필요) ──────────────────────
 
 def test_all_endpoints_have_params_metadata():

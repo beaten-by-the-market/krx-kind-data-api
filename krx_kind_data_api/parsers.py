@@ -122,7 +122,10 @@ def today_disclosure(html: str, **_: Any) -> pd.DataFrame:
                 "상세URL": url,
             }
         )
-    return pd.DataFrame(rows)
+    # 결과가 0건이어도 고정 컬럼 스키마를 유지한다(빈 df도 컬럼 보존).
+    return pd.DataFrame(rows, columns=[
+        "시간", "회사코드", "회사명", "공시제목", "제출인", "상세URL",
+    ])
 
 
 def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
@@ -178,7 +181,11 @@ def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
                 "상세URL": url,
             }
         )
-    return pd.DataFrame(rows)
+    # 결과가 0건이어도 고정 컬럼 스키마를 유지한다.
+    return pd.DataFrame(rows, columns=[
+        "번호", "시간", "시장", "회사코드", "회사명",
+        "공시제목", "접수번호", "제출인", "상세URL",
+    ])
 
 
 def stock_issue_list(html: str, **_: Any) -> pd.DataFrame:
@@ -227,7 +234,11 @@ def stock_issue_list(html: str, **_: Any) -> pd.DataFrame:
                 "상세URL": disclosure_viewer_url(acptno) if acptno else "",
             }
         )
-    return pd.DataFrame(rows)
+    # 결과가 0건이어도 고정 컬럼 스키마를 유지한다.
+    return pd.DataFrame(rows, columns=[
+        "회사명", "상장(예정)일", "상장방식", "발행주식수", "액면가",
+        "발행사유", "회사코드", "접수번호", "상세URL",
+    ])
 
 
 def labeled_table(
@@ -260,7 +271,8 @@ def labeled_table(
         if len(cells) < len(columns):
             continue
         rows.append({c: cells[i].get_text(strip=True) for i, c in enumerate(columns)})
-    return pd.DataFrame(rows)
+    # 결과가 0건이어도 지정한 columns 스키마를 유지한다.
+    return pd.DataFrame(rows, columns=list(columns))
 
 
 def _pad6(code: Any) -> str:
