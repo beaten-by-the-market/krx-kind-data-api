@@ -121,6 +121,33 @@ def test_listed_issue_seldate_prepare_normalizes():
     assert len(got) == 8 and got.isdigit()
 
 
+def test_disclosure_details_prepare_multi_code():
+    # 다중 코드(시장조치 02) → disclosureType02 파이프 문자열 + Arr 리스트 (네트워크 불필요)
+    from krx_kind_data_api.endpoints import _disclosure_details_prepare
+
+    # 프리셋
+    out = _disclosure_details_prepare({"disclosureType": "시장조치_선택"})
+    assert out["disclosureType02"] == (
+        "0350|0311|0313|0328|0318|0353|0354|0355|0322|0351|0140|0319|0356|"
+    )
+    assert out["pDisclosureType02"] == out["disclosureType02"]
+    assert out["disclosureTypeArr02"] == [
+        "0350", "0311", "0313", "0328", "0318", "0353",
+        "0354", "0355", "0322", "0351", "0140", "0319", "0356",
+    ]
+    assert out["disclosureType"] == ""   # raw 빈 필드 복원
+
+    # 'cat:codes' 즉석 다중 지정
+    out2 = _disclosure_details_prepare({"disclosureType": "02:0350|0311|0313"})
+    assert out2["disclosureType02"] == "0350|0311|0313|"
+    assert out2["disclosureTypeArr02"] == ["0350", "0311", "0313"]
+
+    # 단일 코드 하위호환
+    out3 = _disclosure_details_prepare({"disclosureType": "공정공시_영업실적"})
+    assert out3["disclosureType03"] == "0204|"
+    assert out3["disclosureTypeArr03"] == ["0204"]
+
+
 def test_listed_summary_prepare_normalizes_dashes():
     # 집계 화면은 YYYY-MM-DD(대시 포함) 요구 (네트워크 불필요)
     from krx_kind_data_api.endpoints import _listed_summary_prepare

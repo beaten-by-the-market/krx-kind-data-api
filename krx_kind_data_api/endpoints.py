@@ -96,6 +96,13 @@ def _listed_issue_prepare(p: dict) -> dict:
 DISCLOSURE_TYPE_CODES = {
     # 공정공시(03) > 매출액 영업손익 등 영업실적
     "공정공시_영업실적": {"cat": "03", "code": "0204"},
+    # 시장조치(02) 다중 선택: 관리종목·매매거래정지/해제·불성실공시·상장폐지·수익증권·
+    # 소속부변경·신주인수권증권·신주인수권증서·업종변경·코스닥글로벌변경·
+    # 조회공시답변/요구·투자주의환기종목. code는 파이프(|)로 여러 개 지정.
+    "시장조치_선택": {
+        "cat": "02",
+        "code": "0350|0311|0313|0328|0318|0353|0354|0355|0322|0351|0140|0319|0356",
+    },
 }
 
 # details.do 폼에 존재하는 공시유형 카테고리 탭 인덱스(12·15~19는 폼에 없음).
@@ -145,33 +152,40 @@ def _disclosure_details_defaults() -> dict:
 
 
 def _disclosure_details_prepare(p: dict) -> dict:
-    """친절한 disclosureType(키 또는 'cat:code') → 카테고리별 raw 필드로 전개.
+    """친절한 disclosureType(키 또는 'cat:codes') → 카테고리별 raw 필드로 전개.
 
     - disclosureType 이 DISCLOSURE_TYPE_CODES 의 키면 그 cat/code 사용.
-    - 'cat:code'(예: '03:0204') 형태면 그대로 파싱해 사용(매핑에 없는 유형 즉석 지정).
+    - 'cat:codes' 형태(예 '03:0204', '02:0350|0311|0313')면 그대로 파싱.
+      codes는 파이프(|)로 여러 개 지정 가능(같은 카테고리 내 다중 선택).
     - 값이 없으면 공시유형 필터 없이 전체 조회.
+
+    다중 코드는 disclosureType{cat}="c1|c2|...|" 와
+    disclosureTypeArr{cat}=[c1, c2, ...](반복 필드)로 전송된다.
     """
     from .exceptions import KINDFetchError
 
     key = (p.pop("disclosureType", "") or "").strip()
     cat = (p.pop("disclosureTypeCat", "") or "").strip()
-    code = (p.pop("disclosureTypeCode", "") or "").strip()
+    codes_raw = (p.pop("disclosureTypeCode", "") or "").strip()
     if key:
         spec = DISCLOSURE_TYPE_CODES.get(key)
         if spec is not None:
-            cat, code = spec["cat"], spec["code"]
+            cat, codes_raw = spec["cat"], spec["code"]
         elif ":" in key:
-            cat, code = (x.strip() for x in key.split(":", 1))
+            cat, codes_raw = (x.strip() for x in key.split(":", 1))
         else:
             raise KINDFetchError(
                 f"Unknown disclosureType {key!r}. "
                 f"Available keys: {sorted(DISCLOSURE_TYPE_CODES)} "
-                f"or use 'cat:code' form (예: '03:0204')."
+                f"or use 'cat:codes' form (예: '03:0204', '02:0350|0311')."
             )
-    if cat and code:
-        p[f"disclosureType{cat}"] = f"{code}|"
-        p[f"pDisclosureType{cat}"] = f"{code}|"
-        p[f"disclosureTypeArr{cat}"] = code
+    if cat and codes_raw:
+        codes = [c for c in codes_raw.split("|") if c]   # 개별 코드 리스트
+        pipe = "".join(f"{c}|" for c in codes)           # "0350|0311|...|"
+        p[f"disclosureType{cat}"] = pipe
+        p[f"pDisclosureType{cat}"] = pipe
+        # 리스트로 두면 requests가 disclosureTypeArr{cat}=c1&...=c2 반복 필드로 보낸다.
+        p[f"disclosureTypeArr{cat}"] = codes
     # 친절한 파라미터를 소비했으니 raw 빈 필드를 복원(폼이 기대).
     p["disclosureType"] = ""
     return p
@@ -782,11 +796,13 @@ ENDPOINTS = {
                   "총 건수는 많을 수 있으니 currentPageSize(≤100)+pageIndex로 페이지네이션.",
         "params": {
             "disclosureType": {
-                "kind": "filter", "required": False, "example": "공정공시_영업실적",
-                "enum": ["공정공시_영업실적"],
+                "kind": "filter", "required": False, "example": "시장조치_선택",
+                "enum": ["공정공시_영업실적", "시장조치_선택"],
                 "desc": "공시유형 필터. 등록된 키('공정공시_영업실적'=공정공시>매출액 영업손익 등 "
-                        "영업실적) 또는 'cat:code' 형태(예 '03:0204')로 직접 지정. "
-                        "생략 시 전체 유형. 새 유형은 endpoints.DISCLOSURE_TYPE_CODES에 추가.",
+                        "영업실적, '시장조치_선택'=시장조치 12개 항목 다중선택) 또는 'cat:codes' "
+                        "형태로 직접 지정. 같은 카테고리 다중 코드는 파이프로 연결(예 '03:0204', "
+                        "'02:0350|0311|0313'). 생략 시 전체 유형. "
+                        "새 유형은 endpoints.DISCLOSURE_TYPE_CODES에 추가.",
             },
             "toDate": {
                 "kind": "date", "required": True, "format": "YYYY-MM-DD",
