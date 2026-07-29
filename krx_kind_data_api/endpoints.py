@@ -823,6 +823,11 @@ ENDPOINTS = {
                 "kind": "filter", "required": False, "example": "삼성전자",
                 "desc": "회사명(부분일치) 또는 종목코드로 필터. 빈값이면 전체.",
             },
+            "securities": {
+                "kind": "filter", "required": False, "example": "1",
+                "desc": "증권구분 필터. 1=주권(ETF·ETN·리츠·수익증권 등 제외). "
+                        "빈값이면 전체 증권. 종목 리스크 분석 시 1로 두면 상품성 공시가 빠진다.",
+            },
             "currentPageSize": {
                 "kind": "paging", "required": False, "example": "100",
                 "desc": "한 페이지 행 수. 화면 최대는 100(초과는 서버가 무시할 수 있음). "
