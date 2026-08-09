@@ -81,23 +81,33 @@ import re
 
 # 잠정실적 서식코드(docno). 다른 공시유형은 값이 다르다(§5 Selenium 폴백 참고).
 DOCNO_JAMJEONG = {"separate": "99620", "consolidated": "99626"}
-_CONTENT_ID_RE = re.compile(r"option\s+value=['\"](\d{14})\|")
+_CONTENT_ID_RE = re.compile(r"option\s+value=['\"](\d{14})\|([YN])")
 
 
-def disclosure_content_id(acptno: str, *, session=None, timeout: int = 30) -> str:
-    """shell HTML에서 본문 content_id(14자리) 추출. 접수번호와 다를 수 있다."""
+def disclosure_content_ids(acptno: str, *, session=None, timeout: int = 30) -> list:
+    """content_id 후보를 우선순위 순으로. `|Y`(현재 유효 문서)가 먼저.
+
+    정정공시는 option 이 2개(`|N` 원공시, `|Y` 정정본)라 첫 번째를 쓰면 404 가 난다.
+    정정의 정정(3개 이상)은 shell 만으로 확정할 수 없어 호출 측에서 순차 시도한다.
+    """
     html = request(
-        f"common/disclsviewer.do",
+        "common/disclsviewer.do",
         {"method": "search", "acptno": acptno, "docno": "",
          "viewerhost": "", "viewerport": ""},
         http="get", encoding="euc-kr", session=session, timeout=timeout,
     )
-    m = _CONTENT_ID_RE.search(html)      # 첫 <option value='...|Y'> = 주 문서
-    if not m:
+    opts = _CONTENT_ID_RE.findall(html)   # [(content_id, 'Y'|'N'), ...]
+    if not opts:
         raise KINDFetchError(
             f"content_id를 찾지 못함(acptno={acptno}). shell 구조 변경 또는 문서 없음."
         )
-    return m.group(1)
+    return ([cid for cid, flag in opts if flag == "Y"]
+            + [cid for cid, flag in reversed(opts) if flag != "Y"])
+
+
+def disclosure_content_id(acptno: str, *, session=None, timeout: int = 30) -> str:
+    """shell HTML에서 본문 content_id(14자리) 추출. 접수번호와 다를 수 있다."""
+    return disclosure_content_ids(acptno, session=session, timeout=timeout)[0]
 
 
 def disclosure_content_url(
@@ -215,9 +225,17 @@ def disclosure_content_url_selenium(acptno: str, *, headless: bool = True,
 
 - **슬롯4 = 접수번호[8:14](seq)**, 종목코드 아님. (예시 URL의 `000490`이 우연히 종목코드처럼 보였을 뿐.)
 - **content_id ≠ 접수번호.** 반드시 shell option에서 추출. 접수번호를 그대로 넣으면 404.
-- **다중 option**: 관련공시·첨부가 있으면 `<option value='...|'>`이 여러 개일 수 있다. 첫 번째 = 주 문서.
-  자회사 대신공시(제목 `(자회사의 주요경영사항)`)도 주 문서는 첫 option. 필요하면 option **텍스트**로 필터.
-- **docno는 공시유형별**: 잠정실적 별도 99620 / 연결 99626. 다른 공시로 확장하면 그 폼의 docno 확인 필요(Selenium 폴백이 안전).
+- **다중 option**: `<option value='{14자리}|{Y|N}'>`이 여러 개일 수 있다.
+  **Y/N 플래그가 현재 유효한 문서를 가리킨다 — 첫 번째가 아니다.**
+  - 원공시: option 1개.
+  - **정정공시: 2개(`|N` 원공시, `|Y` 정정본).** 첫 번째(=원공시)의 content_id를 정정 접수번호와
+    조합하면 **404**. (배당공시 자회사명 수집에서 1,309건 중 41건이 이 이유로 실패했다.)
+  - 정정의 정정: 3개 이상. shell만으로는 확정할 수 없으므로(같은 날 정정이 2건이면 날짜로도
+    못 가른다) `disclosure_content_ids()`가 주는 후보를 **순차 시도**해 200이 나오는 것을 쓴다.
+  - 자회사 대신공시(제목 `(자회사의 주요경영사항)`)는 option 개수와 무관.
+- **docno는 공시유형별**: 잠정실적 별도 99620 / 연결 99626,
+  현금ㆍ현물 배당 결정 61500(유가)/71500(코스닥), 배당 주주명부폐쇄(기준일) 결정 91444(유가).
+  docno가 고정인 공시유형은 **Selenium 폴백 없이** `disclosure_content_url(acptno, docno=...)`로 끝난다.
 - **인코딩**: shell=EUC-KR, 본문 `.htm`=UTF-8.
 - **월별·값없음**: 월별 잠정공시(예: 지역난방공사)는 본문 표의 재무값이 `-`. URL·구조는 정상.
 - **본문 구조**(참고): iXBRL 아님. 평문 xforms 테이블 2개 — `XFormD1_Form0_Table0`(실적기간),

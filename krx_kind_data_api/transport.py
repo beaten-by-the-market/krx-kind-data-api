@@ -103,7 +103,38 @@ def disclosure_viewer_url(acptno: str) -> str:
 
 # 잠정실적 서식코드(docno). 다른 공시유형은 값이 다르다.
 DOCNO_JAMJEONG = {"separate": "99620", "consolidated": "99626"}
-_CONTENT_ID_RE = re.compile(r"option\s+value=['\"](\d{14})\|")
+_CONTENT_ID_RE = re.compile(r"option\s+value=['\"](\d{14})\|([YN])")
+
+
+def disclosure_content_ids(
+    acptno: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 30,
+) -> list:
+    """shell HTML의 content_id 후보를 **우선순위 순**으로 반환.
+
+    <option value='{14자리}|{Y|N}'> 의 Y/N 플래그가 현재 유효한 문서를 가리킨다.
+    - 원공시: option 1개.
+    - 정정공시: 2개(`|N` 원공시, `|Y` 정정본). 정정의 정정이면 3개 이상.
+
+    정정공시에서 `|N`(원공시)의 content_id 를 정정 접수번호와 조합하면 404 가 난다.
+    그래서 `|Y` 를 앞에 두고, 그 다음 나머지를 역순(최신 우선)으로 반환한다.
+    같은 날 정정이 2건이면 shell 만으로는 확정할 수 없어 호출 측에서 순차 시도해야 한다.
+    """
+    html = request(
+        "common/disclsviewer.do",
+        {"method": "search", "acptno": acptno, "docno": "",
+         "viewerhost": "", "viewerport": ""},
+        http="get", encoding="euc-kr", session=session, timeout=timeout,
+    )
+    opts = _CONTENT_ID_RE.findall(html)
+    if not opts:
+        raise KINDFetchError(
+            f"content_id를 찾지 못함(acptno={acptno}). shell 구조 변경 또는 문서 없음."
+        )
+    return ([cid for cid, flag in opts if flag == "Y"]
+            + [cid for cid, flag in reversed(opts) if flag != "Y"])
 
 
 def disclosure_content_id(
@@ -114,20 +145,11 @@ def disclosure_content_id(
 ) -> str:
     """shell HTML에서 본문 content_id(14자리) 추출. 접수번호와 다를 수 있다.
 
-    관련공시·첨부가 있으면 <option>이 여러 개일 수 있는데 첫 번째가 주 문서다.
+    option 이 여러 개면 `|Y`(현재 유효 문서)를 고른다. 원공시는 option 이 하나뿐이라
+    기존 동작과 같고, 정정공시에서만 결과가 달라진다(예전에는 원공시 것을 반환해 404).
+    후보를 모두 보려면 disclosure_content_ids 를 쓴다.
     """
-    html = request(
-        "common/disclsviewer.do",
-        {"method": "search", "acptno": acptno, "docno": "",
-         "viewerhost": "", "viewerport": ""},
-        http="get", encoding="euc-kr", session=session, timeout=timeout,
-    )
-    m = _CONTENT_ID_RE.search(html)      # 첫 <option value='...|Y'> = 주 문서
-    if not m:
-        raise KINDFetchError(
-            f"content_id를 찾지 못함(acptno={acptno}). shell 구조 변경 또는 문서 없음."
-        )
-    return m.group(1)
+    return disclosure_content_ids(acptno, session=session, timeout=timeout)[0]
 
 
 def disclosure_content_url(
