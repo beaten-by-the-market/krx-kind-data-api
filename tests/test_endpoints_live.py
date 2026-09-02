@@ -270,6 +270,34 @@ def test_parsers_keep_columns_when_empty():
         assert len(df) == 0
         assert list(df.columns) == expected, parser_name
 
+    # kind_list_with_code: 0건 화면은 colspan 안내행 1개만 담는다.
+    # read_html에 그대로 넘기면 colspan이 펼쳐져 데이터 1행이 되므로 가드가 필요.
+    cols = ["회사명", "합병상장일", "상장유형", "증권구분", "업종", "국적", "상장주선인"]
+    df = parsers.kind_list_with_code(
+        '<table class="list type-00 tmt30"><tbody>'
+        '<tr><td colspan="7">조회된 결과값이 없습니다.</td></tr>'
+        "</tbody></table>",
+        table_class="list type-00 tmt30",
+        columns=cols,
+    )
+    assert len(df) == 0
+    assert list(df.columns) == cols + ["회사코드"]
+
+    # 회귀: 정상 행은 그대로 파싱되고 회사코드도 붙는다.
+    body = "".join(
+        f"<tr onclick=\"fnDetailView('{code}')\">"
+        + "".join(f"<td>{code}-{i}</td>" for i in range(7))
+        + "</tr>"
+        for code in ("00126", "00127")
+    )
+    df = parsers.kind_list_with_code(
+        f'<table class="list type-00 tmt30"><tbody>{body}</tbody></table>',
+        table_class="list type-00 tmt30",
+        columns=cols,
+    )
+    assert len(df) == 2
+    assert df["회사코드"].tolist() == ["00126", "00127"]
+
     # labeled_table은 columns 인자를 그대로 스키마로 유지
     df = parsers.labeled_table(
         '<table class="x"><tbody></tbody></table>',

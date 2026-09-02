@@ -12,6 +12,7 @@ KIND 화면은 두 부류다.
 from __future__ import annotations
 
 import re
+import warnings
 from io import StringIO
 from typing import Any, Callable, Optional
 
@@ -71,18 +72,36 @@ def kind_list_with_code(
             f"대상 테이블을 못 찾음 (class={table_class!r}, index={table_index})"
         )
 
+    # 결과 0건 가드: KIND는 조회 결과가 없어도 200 + 표를 돌려주고 tbody에
+    #     <tr><td colspan="N">조회된 결과값이 없습니다.</td></tr>
+    # 한 행만 담는다. 그대로 read_html에 넘기면 colspan이 N개 컬럼으로 펼쳐져
+    # "모든 컬럼이 같은 문자열인 데이터 1행"이 되어 버린다. 안내 문구가 바뀌어도
+    # 견디도록 문자열이 아니라 구조로 판정한다 — 이 파서가 쓰이는 목록 화면은
+    # 모두 다열 표라, td가 2개 이상인 행이 하나도 없으면 0건 화면이다.
+    body = table.find("tbody") or table
+    rows = body.find_all("tr")
+    if not any(len(tr.find_all("td")) >= 2 for tr in rows):
+        return pd.DataFrame(
+            columns=(list(columns) if columns else []) + [code_column]
+        )
+
     df = read_html(str(table), table_index=0, header=header)
     if columns is not None:
         df.columns = list(columns)[: len(df.columns)]
 
-    body = table.find("tbody") or table
     codes = []
-    for tr in body.find_all("tr"):
+    for tr in rows:
         m = _CODE_RE.search(str(tr))
         codes.append(m.group(1) if m else None)
     # 헤더 행이 tbody 밖에 있으면 행 수가 맞는다. 어긋나면 코드 부착 생략.
     if len(codes) == len(df):
         df[code_column] = codes
+    else:
+        warnings.warn(
+            f"{code_column} 컬럼 생략: 행 수 불일치"
+            f" (표 {len(codes)}행 vs 파싱 {len(df)}행)",
+            stacklevel=2,
+        )
     return df
 
 
