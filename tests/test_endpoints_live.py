@@ -415,11 +415,27 @@ def test_content_id_differs_from_acptno():
     assert cid != acpt          # content_id ≠ 접수번호
 
 
-def test_content_url_requires_docno_or_basis():
+def test_content_url_without_docno_resolves():
+    """docno/basis 미지정 → searchContents 로 자동 해석(예전엔 ValueError였다)."""
     from krx_kind_data_api import disclosure_content_url
 
-    with pytest.raises(ValueError):
-        disclosure_content_url("20260629000856")
+    url = disclosure_content_url("20260629000856")
+    assert url.endswith("/99620.htm")          # basis="separate" 와 같은 결과
+    assert "/external/2026/06/29/000856/" in url
+
+
+def test_resolve_content_url_docno_varies_by_market():
+    """매매거래정지처럼 docno 가 시장·조치종류마다 다른 폼도 매핑표 없이 해석된다."""
+    from krx_kind_data_api import resolve_content_url
+
+    cases = {
+        "20260918000659": "70797",   # 코스닥 주권매매거래정지
+        "20260918000790": "70799",   # 코스닥 주권매매거래정지해제
+        "20260812000521": "32010",   # 코넥스 주권매매거래정지
+        "20260917000531": "99808",   # 유가 매매거래정지 및 정지해제(중요내용공시)
+    }
+    for acptno, docno in cases.items():
+        assert resolve_content_url(acptno).endswith(f"/{docno}.htm"), acptno
 
 
 def test_content_html_fetch():

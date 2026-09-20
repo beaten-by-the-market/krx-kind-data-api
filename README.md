@@ -71,6 +71,26 @@ Claude Desktop / Claude Code 등록(`claude_desktop_config.json` 또는 mcp 설�
 - 구현/설계: [krx_kind_data_api/mcp_server.py](krx_kind_data_api/mcp_server.py).
   순수 로직(스키마·디스패치)과 서버 구동이 분리돼 있어 mcp 미설치로도 테스트됩니다.
 
+### 공시 본문(iframe) HTML 가져오기
+
+접수번호로 공시 **본문** HTML의 실제 URL을 얻는다. `docno`(서식코드)를 몰라도 된다.
+
+```python
+from krx_kind_data_api import resolve_content_url, disclosure_content_html
+
+resolve_content_url("20260918000659")       # 코스닥 매매거래정지 → .../70797.htm
+disclosure_content_html("20260629000856", basis="separate")   # 잠정실적 본문 HTML
+```
+
+`docno`는 공시유형뿐 아니라 **시장·조치종류마다 다르다**(매매거래정지: 코스닥 정지
+`70797`/해제 `70799`, 코넥스 `32010`/`32012`, 유가 `68060`/`68054`/`99808`). 매핑표는
+새 서식마다 깨지므로, 모르면 `resolve_content_url()`이 shell의 `searchContents` 폼
+전송을 재현해 서버에서 완성 URL을 받아온다(요청 2회, Selenium 불필요).
+자세한 메커니즘: [docs/공시본문_iframe_URL_엔드포인트_핸드오프.md](docs/공시본문_iframe_URL_엔드포인트_핸드오프.md).
+
+> ⚠️ KIND는 과한 호출에 민감하다. 대량 수집은 분당 50요청(공시 1건당 3요청 = 분당 약
+> 16건) 정도로 제한할 것.
+
 ### 새 화면을 API로 추가
 
 `krx_kind_data_api/endpoints.py`의 `ENDPOINTS`에 dict 한 줄을 추가하면 끝입니다.
@@ -123,7 +143,7 @@ KIND는 `data.krx.co.kr`(정보데이터시스템)과 달리 OTP 2단계 다운�
 | `disclosure/todaydisclosure.do` | 당일공시 | 영문공시/번역 대상 수집 |
 | `disclosure/details.do?method=searchDetailsMain` | 공시 상세검색 | 공정공시·손익변경 (requests POST, `disclosure_details`) |
 | `common/disclsviewer.do` | 공시 뷰어(shell) | 개별 공시 뷰어 링크(`disclosure_viewer_url`) |
-| `external/.../{docno}.htm` | 공시 본문(iframe) | 접수번호→본문 HTML 실제 URL(`disclosure_content_url` / `disclosure_content_html`) |
+| `external/.../{docno}.htm` | 공시 본문(iframe) | 접수번호→본문 HTML 실제 URL(`disclosure_content_url` / `disclosure_content_html`). docno 몰라도 `resolve_content_url()`이 자동 해석 |
 | `listinvstg/miscListTypeStatDetail.do` | 상장유형별 통계 상세 | 실적예측/스톡옵션 |
 | `listinvstg/pubofrprogcom.do` | 공모기업 진행현황 | IPO 수요예측·청약·상장예정일 수집 |
 | `investwarn/adminissue.do` / `undisclosure.do` / `delcompany.do` | 관리종목 / 불성실공시 / 상장폐지 | 투자유의 |

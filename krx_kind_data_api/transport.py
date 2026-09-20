@@ -104,6 +104,75 @@ def disclosure_viewer_url(acptno: str) -> str:
 # 잠정실적 서식코드(docno). 다른 공시유형은 값이 다르다.
 DOCNO_JAMJEONG = {"separate": "99620", "consolidated": "99626"}
 _CONTENT_ID_RE = re.compile(r"option\s+value=['\"](\d{14})\|([YN])")
+# searchContents 응답에서 완성 본문 URL(docno 포함)을 뽑는다.
+_DOCPATH_RE = re.compile(r"(https?://[^\s'\"]+?\.htm)")
+
+
+def _shell_url(acptno: str) -> str:
+    return (
+        f"{BASE}/common/disclsviewer.do?method=search"
+        f"&acptno={acptno}&docno=&viewerhost=&viewerport="
+    )
+
+
+def _shell_html(
+    acptno: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 30,
+) -> str:
+    """공시 뷰어 shell(EUC-KR) HTML."""
+    return request(
+        "common/disclsviewer.do",
+        {"method": "search", "acptno": acptno, "docno": "",
+         "viewerhost": "", "viewerport": ""},
+        http="get", encoding="euc-kr", session=session, timeout=timeout,
+    )
+
+
+def resolve_content_url(
+    acptno: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 30,
+) -> str:
+    """접수번호 → 본문 실제 URL. **docno를 몰라도 된다.**
+
+    shell 의 `docpathfrm` 폼(=`method=searchContents`)을 그대로 재현하면 서버가
+    docno 가 박힌 완성 URL을 돌려준다. XHR 이 아니라 iframe 타깃 폼 전송이라
+    requests 로 재현된다(예전엔 봇 차단으로 requests 불가라고 봤으나 오판이었다).
+
+    ⚠️ 폼 필드 `docNo` 에는 **content_id** 를 넣어야 한다. 접수번호를 넣으면
+    blank.html 이 온다. 정정공시는 content_id 후보가 여럿이라 순차 시도한다.
+
+    docno 가 공시유형·시장·조치종류마다 다른 폼(예: 매매거래정지는 코스닥 정지
+    70797 / 해제 70799, 유가 68060·68054·99808)에서 매핑표 없이 쓸 수 있다.
+    docno 가 고정인 폼은 `disclosure_content_url(acptno, docno=...)` 가 요청 1회
+    더 적으므로 그쪽이 낫다.
+    """
+    s = session or requests.Session()
+    shell = _shell_html(acptno, session=s, timeout=timeout)
+    opts = _CONTENT_ID_RE.findall(shell)
+    if not opts:
+        raise KINDFetchError(
+            f"content_id를 찾지 못함(acptno={acptno}). shell 구조 변경 또는 문서 없음."
+        )
+    cands = ([cid for cid, flag in opts if flag == "Y"]
+             + [cid for cid, flag in reversed(opts) if flag != "Y"])
+    for cid in cands:
+        html = request(
+            "common/disclsviewer.do",
+            {"method": "searchContents", "docNo": cid},
+            http="post", send_as="data", encoding="euc-kr",
+            session=s, timeout=timeout,
+        )
+        m = _DOCPATH_RE.search(html)
+        if m:
+            return m.group(1)
+    raise KINDFetchError(
+        f"본문 URL 미확보(acptno={acptno}). content_id 후보 {len(cands)}개가 모두 "
+        f"blank.html 이었다."
+    )
 
 
 def disclosure_content_ids(
@@ -122,13 +191,9 @@ def disclosure_content_ids(
     그래서 `|Y` 를 앞에 두고, 그 다음 나머지를 역순(최신 우선)으로 반환한다.
     같은 날 정정이 2건이면 shell 만으로는 확정할 수 없어 호출 측에서 순차 시도해야 한다.
     """
-    html = request(
-        "common/disclsviewer.do",
-        {"method": "search", "acptno": acptno, "docno": "",
-         "viewerhost": "", "viewerport": ""},
-        http="get", encoding="euc-kr", session=session, timeout=timeout,
+    opts = _CONTENT_ID_RE.findall(
+        _shell_html(acptno, session=session, timeout=timeout)
     )
-    opts = _CONTENT_ID_RE.findall(html)
     if not opts:
         raise KINDFetchError(
             f"content_id를 찾지 못함(acptno={acptno}). shell 구조 변경 또는 문서 없음."
@@ -162,17 +227,18 @@ def disclosure_content_url(
 ) -> str:
     """접수번호 → 공시 본문(iframe) 실제 URL.
 
-    docno 결정 우선순위: 명시 docno > basis(잠정실적 별도/연결) 매핑.
-    둘 다 없으면 ValueError(→ 임의 폼은 selenium_viewer 폴백 사용).
+    docno 결정 우선순위: 명시 docno > basis(잠정실적 별도/연결) 매핑 >
+    **searchContents 조회**(docno 자동 해석, `resolve_content_url`).
+
+    셋 다 요청 1~2회로 끝나며 Selenium 은 더 이상 필요 없다. docno 를 아는 폼은
+    요청이 1회 적으니 docno/basis 를 주는 쪽이 여전히 빠르다.
     """
     if docno is None:
         if basis in DOCNO_JAMJEONG:
             docno = DOCNO_JAMJEONG[basis]
         else:
-            raise ValueError(
-                "docno 또는 basis('separate'/'consolidated')가 필요합니다. "
-                "임의 공시유형은 selenium_viewer.disclosure_content_url_selenium을 쓰세요."
-            )
+            # docno 미상(임의 폼) — 서버에 직접 물어본다.
+            return resolve_content_url(acptno, session=session, timeout=timeout)
     cid = disclosure_content_id(acptno, session=session, timeout=timeout)
     y, m, d = acptno[0:4], acptno[4:6], acptno[6:8]
     return f"{BASE}/external/{y}/{m}/{d}/{acptno[8:14]}/{cid}/{docno}.htm"

@@ -14,9 +14,16 @@
 - 필요한 3조각:
   1. **날짜 + `acptno[8:14]`** ← 접수번호에서 바로. (⚠️ 4번째 슬롯은 **종목코드가 아니라 접수번호 seq**다.)
   2. **`content_id`** ← shell HTML 안 `<option value='{14자리}|Y'>` 에 정적으로 들어있음. **requests로 추출 가능.**
-  3. **`docno`(서식코드)** ← shell엔 없고 JS(`searchContents`, 봇 차단)로만 옴. **폼 종류로 결정**: 잠정실적 별도=`99620`, 연결=`99626`.
-- **권장 구현**: requests-only 함수 `disclosure_content_url(acptno, docno=...)` (의존성 추가 없음).
-  `docno`를 모르는 임의 폼은 **Selenium 폴백**(선택 의존성)으로 `docLocPath`를 직접 읽는다.
+  3. **`docno`(서식코드)** ← shell엔 없다. 두 가지로 얻는다:
+     - 폼 종류가 고정이면 표로 결정(잠정실적 별도=`99620`, 연결=`99626`).
+     - **모르면 `searchContents` 폼 전송을 requests로 재현**해 서버에게 물어본다(§5). 이게 범용 해법.
+- **권장 구현**: `disclosure_content_url(acptno)` — docno/basis를 주면 조립, 안 주면 자동 해석.
+  **Selenium은 더 이상 필요 없다**(§5).
+
+> ⚠️ **2026-09 정정**: 이 문서는 원래 `searchContents`가 "봇을 차단해 정적 requests 불가"라고
+> 적었고 그래서 Selenium 폴백을 권했다. **오판이었다.** 차단되는 건 없고, `searchContents`는
+> XHR이 아니라 **iframe 타깃 폼 전송**이라 그대로 POST하면 된다(§5). 매매거래정지처럼 docno가
+> 시장·조치종류마다 갈리는 폼을 매핑표 없이 수집하려다 확인했다.
 
 ---
 
@@ -24,7 +31,9 @@
 
 `kind_url = disclosure_viewer_url(acptno)` = `disclsviewer.do?method=search&acptno=...` 은
 `<iframe id="docViewFrm" src="">` 가 **빈 채로** 오고, 로드 후 JS가 `searchContents` AJAX를 호출해
-`docLocPath`(진짜 본문 URL)를 채운다. 그 AJAX는 봇을 `blank.html`로 리다이렉트한다(정적 requests 불가).
+`docLocPath`(진짜 본문 URL)를 채운다. 그 AJAX는 `docNo`가 틀리면 `blank.html`을 돌려준다.
+~~봇을 리다이렉트한다(정적 requests 불가).~~ **← 틀렸다.** `docNo`에 접수번호를 넣어서 난 blank였다.
+**content_id를 넣으면 requests로 정상 응답한다**(§5).
 
 그러나 **`content_id`는 shell 정적 HTML에 이미 있다**:
 
@@ -56,7 +65,10 @@ https://kind.krx.co.kr/external/{acptno[0:4]}/{acptno[4:6]}/{acptno[6:8]}/{acptn
 | 영업(잠정)실적(공정공시) — **별도** | `99620` |
 | 연결재무제표기준 영업(잠정)실적 — **연결** | `99626` |
 
-> 다른 공시유형은 docno가 다르다. 잠정실적 외로 확장하려면 §5의 Selenium 폴백을 쓰거나 폼→docno 표를 만든다.
+> 다른 공시유형은 docno가 다르다. 그리고 **폼 종류만으로 결정되지 않는 경우가 많다** — 매매거래정지는
+> 시장 × 조치종류로 갈린다(코스닥 정지 `70797` / 해제 `70799` / 기간변경 `70798`,
+> 코넥스 `32010`·`32012`·`32011`, 유가 `68060`·`68054`·`99808`). 제목 정규식으로 분기하는
+> 매핑표는 새 서식이 생길 때마다 조용히 깨지므로, **docno 미상이면 §5를 쓴다.**
 
 ## 3. 설계 결정 — requests 우선 + Selenium 폴백
 
@@ -64,11 +76,13 @@ https://kind.krx.co.kr/external/{acptno[0:4]}/{acptno[4:6]}/{acptno[6:8]}/{acptn
 
 | 방식 | 필요 | 속도 | 커버리지 |
 |---|---|---|---|
-| **requests-only** (권장) | shell 1회 GET + content_id 정규식 + docno(폼별) | 빠름(~0.3s) | docno를 아는 폼(잠정실적 등) |
-| **Selenium 폴백** (선택) | 헤드리스 Chrome, `docLocPath` 읽기 | 느림(~5s) | **임의 폼**(docno 몰라도 됨) |
+| **docno 지정** | shell 1회 GET + content_id 정규식 + docno(폼별) | 가장 빠름(요청 1회) | docno를 아는 폼(잠정실적 등) |
+| **searchContents 해석** (권장·범용) | shell GET + `searchContents` POST | 빠름(요청 2회) | **임의 폼**(docno 몰라도 됨) |
+| ~~Selenium 폴백~~ | 헤드리스 Chrome, `docLocPath` 읽기 | 느림(~5s) | 위 두 가지로 충분해 **불필요** |
 
-→ 함수 시그니처: `disclosure_content_url(acptno, *, docno=None, ...)`.
-`docno`가 주어지면 requests-only, 없고 `use_selenium=True`면 폴백.
+→ 함수 시그니처: `disclosure_content_url(acptno, *, docno=None, basis=None, ...)`.
+docno/basis를 주면 조립하고, **없으면 `resolve_content_url()`로 자동 해석**한다.
+Selenium 모듈(`selenium_viewer.py`)은 하위호환으로 남겨두지만 쓸 일이 없다.
 
 ## 4. 붙여넣을 코드 — requests-only
 
@@ -173,53 +187,52 @@ disclosure_content_url("20260616000198", docno="99626")
 html = disclosure_content_html("20260629000856", basis="separate")   # 본문 HTML
 ```
 
-## 5. Selenium 폴백 (선택) — 임의 폼·docno 미상
+## 5. searchContents 해석 (권장) — 임의 폼·docno 미상
 
-docno를 모르거나 shell 구조가 바뀌어 requests가 실패할 때. 완성 URL을 JS가 직접 준다.
-selenium 4는 Selenium Manager가 chromedriver를 자동 관리(별도 설치 불필요), Chrome만 있으면 됨.
+shell의 `docpathfrm` 폼을 그대로 POST하면 **docno가 박힌 완성 URL**이 돌아온다.
 
-### 5-1. `pyproject.toml` 선택 의존성
-
-```toml
-[project.optional-dependencies]
-selenium = ["selenium>=4"]
+```html
+<form name="docpathfrm" id="docpathfrm" target="docpathframe" action="/common/disclsviewer.do">
+  <input type="hidden" name="method" id="method" value="searchContents" />
+  <input type="hidden" name="docNo"  id="docNo"  value="" />
+</form>
 ```
 
-### 5-2. `krx_kind_data_api/selenium_viewer.py` (신규)
+`target="docpathframe"` — **XHR이 아니라 iframe 타깃 폼 전송**이다. 그래서 requests로 그대로 된다.
 
 ```python
-"""Selenium 폴백: 임의 공시의 본문 URL을 JS 실행 후 docLocPath에서 직접 읽는다."""
-from __future__ import annotations
-import time
-from .transport import disclosure_viewer_url
-from .exceptions import KINDFetchError
-
-
-def disclosure_content_url_selenium(acptno: str, *, headless: bool = True,
-                                    wait: float = 12.0) -> str:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    opt = Options()
-    if headless:
-        opt.add_argument("--headless=new")
-    for a in ("--no-sandbox", "--disable-gpu", "--window-size=1200,900"):
-        opt.add_argument(a)
-    d = webdriver.Chrome(options=opt)
-    try:
-        d.get(disclosure_viewer_url(acptno))
-        deadline = time.time() + wait
-        while time.time() < deadline:
-            time.sleep(0.5)
-            loc = d.execute_script(
-                "var e=document.getElementById('docLocPath');return e?e.value:'';")
-            if loc:
-                return loc     # 완성 URL(docno 포함) 그대로 반환
-        raise KINDFetchError(f"docLocPath 미확보(acptno={acptno})")
-    finally:
-        d.quit()
+POST https://kind.krx.co.kr/common/disclsviewer.do
+data = {"method": "searchContents", "docNo": <content_id>}
+# → 응답 본문에 https://kind.krx.co.kr/external/.../70797.htm
 ```
 
-> 대량 수집 시 브라우저를 재사용하도록 클래스로 감싸는 게 좋다(매 호출 `webdriver.Chrome()`은 느림).
+⚠️ **`docNo`에 넣는 값은 content_id다.** 접수번호를 넣으면 `blank.html`이 온다.
+(원 문서가 "봇 차단"이라고 본 건 이것 때문이었다.) 정정공시는 content_id 후보가
+여럿이라 `|Y` 우선으로 순차 시도한다.
+
+구현: `transport.resolve_content_url(acptno)`. `disclosure_content_url(acptno)`에
+docno/basis를 안 주면 내부적으로 이걸 부른다.
+
+```python
+from krx_kind_data_api import resolve_content_url, disclosure_content_url
+
+resolve_content_url("20260918000659")          # 코스닥 매매거래정지
+# → .../external/2026/09/18/000659/20260918001407/70797.htm
+disclosure_content_url("20260917000531")       # 유가 99808 — docno 몰라도 됨
+disclosure_content_url("20260629000856", basis="separate")   # docno 아는 폼(요청 1회 적음)
+```
+
+### 호출 속도
+
+KIND는 과한 호출에 민감하다. 대량 수집은 **분당 50요청**(공시 1건당 3요청 = 분당 약
+16건) 수준으로 제한하는 것을 권한다. 참고 구현:
+`case-projects-private/afterhrs_actions/collect_trading_halt_bodies.py`
+(전역 토큰버킷 + 이어받기 + 실패 로그).
+
+### (구) Selenium 폴백
+
+`selenium_viewer.disclosure_content_url_selenium(acptno)`는 남아 있지만 §5로 대체됐다.
+건당 ~5초라 대량 수집에는 쓰지 말 것.
 
 ## 6. 엣지케이스 & 함정
 
