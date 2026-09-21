@@ -91,6 +91,31 @@ disclosure_content_html("20260629000856", basis="separate")   # 잠정실적 본
 > ⚠️ KIND는 과한 호출에 민감하다. 대량 수집은 분당 50요청(공시 1건당 3요청 = 분당 약
 > 16건) 정도로 제한할 것.
 
+### 회사로 거르기 — 화면마다 필드가 다르다
+
+| 엔드포인트 | 동작하는 회사 필터 | `searchCorpName` |
+|---|---|---|
+| `disclosure_details` | `repIsuSrtCd="A005930"` ('A'+종목코드) | ⚠️ 서버가 무시. 6자리 종목코드면 자동으로 `repIsuSrtCd` 로 옮김 |
+| `stock_issue_list` | `isurCd="27957"` (KIND 회사코드) | ⚠️ 서버가 무시 |
+| `pubofr_prog_com` | `searchCorpName` (+`searchCorpNameTmp`, `isurCd`) | 정상 |
+
+무시되는 필드에 회사명만 주면 오류 없이 **전 종목**이 돌아오므로 경고(`UserWarning`)를 띄운다.
+상장폐지 종목의 종목코드는 `corp_list` 에 없다 — `company_summary(회사코드)` 가 폐지 종목도
+조회해 준다.
+
+```python
+from krx_kind_data_api import fetch, company_summary, rep_isu_srt_cd
+
+fetch("disclosure_details", repIsuSrtCd="A005930",
+      fromDate="2026-09-01", toDate="2026-09-18")      # 삼성전자만
+company_summary("41821")["종목코드"]                    # '418210' (신한제10호스팩, 상장폐지)
+fetch("disclosure_details", repIsuSrtCd=rep_isu_srt_cd("41821"),
+      fromDate="2025-02-01", toDate="2025-02-24")
+```
+
+> 회사 필터를 걸어도 **긴 기간 함정은 그대로다.** `fromDate` 를 생략하면(기본 2000-01-01)
+> 삼성전자처럼 공시가 분명히 있는 회사도 오류 없이 0건이 나온다. 기간은 월·연 단위로 끊을 것.
+
 ### 새 화면을 API로 추가
 
 `krx_kind_data_api/endpoints.py`의 `ENDPOINTS`에 dict 한 줄을 추가하면 끝입니다.

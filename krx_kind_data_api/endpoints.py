@@ -45,6 +45,22 @@ def _spac_merge_prepare(p: dict) -> dict:
     return p
 
 
+def _stock_issue_prepare(p: dict) -> dict:
+    """stock_issue_list: searchCorpName 은 서버가 무시하므로 경고한다.
+
+    이 화면의 회사 필터는 isurCd(KIND 회사코드) 하나다. 2026-09 실측으로
+    searchCorpName(회사명·종목코드)·repIsuSrtCd 는 결과를 바꾸지 않았다.
+    """
+    import warnings
+
+    if str(p.get("searchCorpName") or "").strip() and not str(p.get("isurCd") or "").strip():
+        warnings.warn(
+            f"stock_issue_list: searchCorpName={p['searchCorpName']!r} 는 KIND 가 무시한다 — "
+            f"전 종목이 반환된다. 회사로 거르려면 isurCd(KIND 회사코드, 예 '27957')를 쓸 것.",
+            UserWarning, stacklevel=4)
+    return p
+
+
 # ── 공시 상세검색(details.do) 공시유형 매핑 ────────────────────────────
 # details.do는 공시유형을 "카테고리 탭(01~20) + 세부코드"로 필터한다.
 # 필터를 켜려면 해당 카테고리 필드에 값을 넣어야 한다:
@@ -207,8 +223,32 @@ def _disclosure_details_prepare(p: dict) -> dict:
 
     다중 코드는 disclosureType{cat}="c1|c2|...|" 와
     disclosureTypeArr{cat}=[c1, c2, ...](반복 필드)로 전송된다.
+
+    회사 필터도 여기서 정리한다. ⚠️ KIND 는 `searchCorpName` 을 **무시**하고
+    `repIsuSrtCd`('A'+6자리 종목코드)만 본다(2026-09 실측: 회사명·종목코드 어느 쪽을
+    searchCorpName 에 줘도 필터 없음과 결과가 같았다. 클라이언트는 값을 정상 전송함).
+    - repIsuSrtCd 가 6자리 숫자면 'A' 를 붙인다('005930' 은 0건, 'A005930' 이 정답).
+    - searchCorpName 에 6자리 종목코드를 줬으면 repIsuSrtCd 로 옮겨 실제로 거른다.
+    - searchCorpName 에 회사명만 줬으면 거를 방법이 없으니 경고한다(조용히 전 종목이
+      돌아오는 것을 막기 위해). 회사명 → 코드는 corp_list 또는 rep_isu_srt_cd() 로.
     """
+    import re
+    import warnings
+
     from .exceptions import KINDFetchError
+
+    rep = str(p.get("repIsuSrtCd") or "").strip()
+    name = str(p.get("searchCorpName") or "").strip()
+    if re.fullmatch(r"\d{6}", rep):
+        p["repIsuSrtCd"] = "A" + rep
+    elif not rep and re.fullmatch(r"\d{6}", name):
+        p["repIsuSrtCd"] = "A" + name
+    elif not rep and name:
+        warnings.warn(
+            f"disclosure_details: searchCorpName={name!r} 는 KIND 가 무시한다 — 전 종목 "
+            f"공시가 반환된다. 회사로 거르려면 repIsuSrtCd='A'+종목코드(예 'A005930')를 "
+            f"주거나, 상장폐지 종목이면 rep_isu_srt_cd(KIND 회사코드)로 값을 만들 것.",
+            UserWarning, stacklevel=4)
 
     key = (p.pop("disclosureType", "") or "").strip()
     cat = (p.pop("disclosureTypeCat", "") or "").strip()
@@ -337,6 +377,7 @@ ENDPOINTS = {
         "http": "post",
         "send_as": "data",
         "parser": "stock_issue_list",   # 회사코드+접수번호 둘 다 추출(전용 파서)
+        "prepare": _stock_issue_prepare,  # searchCorpName 무시 경고
         "defaults": {
             # ── 화면 내부 고정값 ──
             "method": "searchStockIssueList",
@@ -351,7 +392,7 @@ ENDPOINTS = {
             # ── 필터(빈값 = 전체) ──
             "marketType": "all",         # all=전체 / 1=코스피 / 2=코스닥 계열
             "listingType": "",           # 빈값=전체 (2 추가/3 변경/4 신규/5 재상장)
-            "searchCorpName": "",        # 회사명(부분일치) 또는 종목코드
+            "searchCorpName": "",        # ⚠️ 서버가 무시 — 회사 필터는 isurCd
             "comAbbrv": "",
             "repIsuSrtCd": "",
             "repIsuCd": "",
@@ -385,9 +426,17 @@ ENDPOINTS = {
                 "enum": ["all", "1", "2"],
                 "desc": "시장 구분. all=전체(기본) / 1=코스피 / 2=코스닥 계열.",
             },
+            "isurCd": {
+                "kind": "filter", "required": False, "example": "27957",
+                "desc": "회사 필터. KIND 회사코드(5자리, 공시 목록의 `회사코드` 컬럼과 같은 값). "
+                        "보통 종목코드 앞 5자리다(예 279570 → 27957, 005930 → 00593). "
+                        "이 화면에서 실제로 동작하는 유일한 회사 필터다.",
+            },
             "searchCorpName": {
-                "kind": "filter", "required": False, "example": "삼성전자",
-                "desc": "회사명(부분일치) 또는 종목코드로 필터. 빈값이면 전체.",
+                "kind": "filter", "required": False, "example": "",
+                "desc": "⚠️ KIND 가 **무시한다**(2026-09 실측: 회사명·종목코드·repIsuSrtCd "
+                        "어느 쪽을 줘도 결과 집합이 필터 없음과 같았다). 회사로 거르려면 "
+                        "isurCd 를 쓸 것. 값을 주면 경고가 뜬다.",
             },
             "currentPageSize": {
                 "kind": "paging", "required": False, "example": "5000",
@@ -893,9 +942,19 @@ ENDPOINTS = {
                         "비워 두고 결과의 `시장` 컬럼(유가증권/코스닥/코넥스)으로 나눌 것. "
                         "1,2로 나눠 수집하면 코넥스가 통째로 빠진다.",
             },
+            "repIsuSrtCd": {
+                "kind": "filter", "required": False, "example": "A005930",
+                "desc": "회사 필터. 'A'+6자리 종목코드(예 'A005930'). 'A' 없는 6자리는 자동으로 "
+                        "붙인다('005930' 을 그대로 보내면 0건). 상장폐지 종목은 "
+                        "rep_isu_srt_cd(KIND 회사코드)로 값을 만든다 — company_summary 가 "
+                        "폐지 종목의 종목코드도 준다.",
+            },
             "searchCorpName": {
-                "kind": "filter", "required": False, "example": "삼성전자",
-                "desc": "회사명(부분일치) 또는 종목코드로 필터. 빈값이면 전체.",
+                "kind": "filter", "required": False, "example": "005930",
+                "desc": "⚠️ KIND 가 이 값으로는 **거르지 않는다**(2026-09 실측: 회사명·종목코드 "
+                        "모두 필터 없음과 결과가 같았다). 편의상 6자리 종목코드를 주면 "
+                        "repIsuSrtCd 로 옮겨 실제로 거른다. 회사명만 주면 전 종목이 반환되므로 "
+                        "경고를 띄운다 — repIsuSrtCd 를 쓸 것.",
             },
             "securities": {
                 "kind": "filter", "required": False, "example": "1",

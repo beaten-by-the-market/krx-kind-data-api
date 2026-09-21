@@ -130,6 +130,60 @@ def _shell_html(
     )
 
 
+def company_summary(
+    isur_cd: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 30,
+) -> dict:
+    """KIND 회사코드(isurCd, 5자리) → 회사 기본정보 dict.
+
+    공시 목록의 `회사코드` 컬럼이 이 값이다. **상장폐지된 회사도 조회된다** —
+    `corp_list`(상장법인목록)는 현재 상장사만 담아 폐지 종목의 종목코드를 못 준다.
+
+    반환 키(화면의 항목명 그대로): 한글명, 영문명, 표준코드, 종목코드, 설립일,
+    시장구분('코스닥 상장폐지' 처럼 상태 포함), 상장일, 대표이사, 업종 … .
+    """
+    from bs4 import BeautifulSoup
+
+    html = request(
+        "common/companysummary.do",
+        {"method": "searchCompanySummaryOvrvwDetail", "strIsurCd": str(isur_cd),
+         "lstCd": "undefined"},
+        http="get", encoding="utf-8", session=session, timeout=timeout,
+    )
+    out: dict = {}
+    for tr in BeautifulSoup(html, "html.parser").find_all("tr"):
+        cells = [re.sub(r"\s+", " ", c.get_text(" ", strip=True)).strip()
+                 for c in tr.find_all(["th", "td"])]
+        for k, v in zip(cells[0::2], cells[1::2]):   # th/td 가 번갈아 온다
+            if k and k not in out:
+                out[k] = v
+    if not out.get("종목코드"):
+        raise KINDFetchError(f"회사 정보를 찾지 못함(isurCd={isur_cd}).")
+    return out
+
+
+def rep_isu_srt_cd(
+    code: str,
+    *,
+    session: Optional[requests.Session] = None,
+    timeout: int = 30,
+) -> str:
+    """`disclosure_details` 의 회사 필터 값(`repIsuSrtCd`)을 만든다.
+
+    - 6자리 종목코드('005930') → 'A005930'
+    - 5자리 KIND 회사코드('41821') → company_summary 로 종목코드를 찾아 'A418210'
+      (상장폐지 종목도 된다)
+    """
+    code = str(code).strip()
+    if code.upper().startswith("A") and len(code) == 7:
+        return code.upper()
+    if len(code) == 6:
+        return "A" + code
+    return "A" + company_summary(code, session=session, timeout=timeout)["종목코드"]
+
+
 def resolve_content_url(
     acptno: str,
     *,

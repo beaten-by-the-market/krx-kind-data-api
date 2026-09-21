@@ -26,6 +26,8 @@ from .transport import (
     disclosure_content_ids,
     disclosure_content_html,
     resolve_content_url,
+    company_summary,
+    rep_isu_srt_cd,
     MARKETS,
     BASE,
 )
@@ -48,6 +50,8 @@ __all__ = [
     "disclosure_content_ids",
     "disclosure_content_html",
     "resolve_content_url",
+    "company_summary",
+    "rep_isu_srt_cd",
     "MARKETS",
     "BASE",
     "KINDError",
