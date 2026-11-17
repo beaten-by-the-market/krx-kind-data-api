@@ -29,6 +29,8 @@
 docs/새_엔드포인트_추가하기.md
 """
 
+import re
+
 # SPAC 합병상장(존속/소멸) 스위치. 친절한 spacType → 화면 raw 필드 listTypeArrStr.
 _SPAC_TYPE_TO_CODE = {"존속": "06|", "소멸": "07|", "전체": "06|07|"}
 
@@ -213,6 +215,10 @@ def _disclosure_details_defaults() -> dict:
     return d
 
 
+# KRX 단축 종목코드: 6자리, 첫 자리는 숫자, 나머지는 숫자 또는 영문 대문자('005930' · '0120G0' · '0030R0')
+_SHORT_CODE = re.compile(r"[0-9][0-9A-Z]{5}")
+
+
 def _disclosure_details_prepare(p: dict) -> dict:
     """친절한 disclosureType(키 또는 'cat:codes') → 카테고리별 raw 필드로 전개.
 
@@ -227,7 +233,9 @@ def _disclosure_details_prepare(p: dict) -> dict:
     회사 필터도 여기서 정리한다. ⚠️ KIND 는 `searchCorpName` 을 **무시**하고
     `repIsuSrtCd`('A'+6자리 종목코드)만 본다(2026-09 실측: 회사명·종목코드 어느 쪽을
     searchCorpName 에 줘도 필터 없음과 결과가 같았다. 클라이언트는 값을 정상 전송함).
-    - repIsuSrtCd 가 6자리 숫자면 'A' 를 붙인다('005930' 은 0건, 'A005930' 이 정답).
+    - repIsuSrtCd 가 6자리 종목코드면 'A' 를 붙인다('005930' 은 0건, 'A005930' 이 정답).
+      종목코드는 숫자만이 아니다 — 최근 상장 종목에는 영문이 든 단축코드('0120G0' 삼양바이오팜·'0030R0' 대신밸류리츠)가
+      있다. 예전엔 숫자 6자리만 봐서 이런 코드는 'A' 없이 나가 조용히 0건이었다(2026-11-17 확인).
     - searchCorpName 에 6자리 종목코드를 줬으면 repIsuSrtCd 로 옮겨 실제로 거른다.
     - searchCorpName 에 회사명만 줬으면 거를 방법이 없으니 경고한다(조용히 전 종목이
       돌아오는 것을 막기 위해). 회사명 → 코드는 corp_list 또는 rep_isu_srt_cd() 로.
@@ -239,10 +247,10 @@ def _disclosure_details_prepare(p: dict) -> dict:
 
     rep = str(p.get("repIsuSrtCd") or "").strip()
     name = str(p.get("searchCorpName") or "").strip()
-    if re.fullmatch(r"\d{6}", rep):
-        p["repIsuSrtCd"] = "A" + rep
-    elif not rep and re.fullmatch(r"\d{6}", name):
-        p["repIsuSrtCd"] = "A" + name
+    if _SHORT_CODE.fullmatch(rep.upper()):
+        p["repIsuSrtCd"] = "A" + rep.upper()
+    elif not rep and _SHORT_CODE.fullmatch(name.upper()):
+        p["repIsuSrtCd"] = "A" + name.upper()
     elif not rep and name:
         warnings.warn(
             f"disclosure_details: searchCorpName={name!r} 는 KIND 가 무시한다 — 전 종목 "

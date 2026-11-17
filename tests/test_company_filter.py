@@ -26,6 +26,20 @@ def test_rep_code_gets_a_prefix():
     assert p["repIsuSrtCd"] == "A005930"      # 'A' 없는 6자리는 서버에서 0건
 
 
+def test_alnum_rep_code_gets_a_prefix():
+    # 영문이 든 단축코드(최근 상장 종목) — 예전엔 숫자 6자리만 봐서 'A' 없이 나가 0건이었다
+    for code in ("0120G0", "0030R0", "0126z0"):
+        p = _disclosure_details_prepare({"repIsuSrtCd": code, "searchCorpName": ""})
+        assert p["repIsuSrtCd"] == "A" + code.upper()
+    p = _disclosure_details_prepare({"repIsuSrtCd": "", "searchCorpName": "0120G0"})
+    assert p["repIsuSrtCd"] == "A0120G0"
+
+
+def test_a_prefixed_code_is_left_alone():
+    p = _disclosure_details_prepare({"repIsuSrtCd": "A0120G0", "searchCorpName": ""})
+    assert p["repIsuSrtCd"] == "A0120G0"
+
+
 def test_ticker_in_searchcorpname_moves_to_rep():
     p = _disclosure_details_prepare({"repIsuSrtCd": "", "searchCorpName": "005930"})
     assert p["repIsuSrtCd"] == "A005930"
@@ -61,6 +75,16 @@ def test_disclosure_details_rep_filters_to_one_company():
                fromDate="2026-09-01", toDate="2026-09-18", lastReport="")
     assert len(df) > 0
     assert set(df["회사명"]) == {"삼성전자"}
+
+
+@live
+def test_disclosure_details_alnum_code_filters_to_one_company():
+    """영문이 든 단축코드(삼양바이오팜 0120G0)도 'A'를 붙여 그 회사만 — 2026-03 정기주주총회결과가 있다."""
+    from krx_kind_data_api import fetch
+
+    df = fetch("disclosure_details", repIsuSrtCd="0120G0", fromDate="2026-03-20", toDate="2026-03-25", lastReport="")
+    assert len(df) > 0
+    assert set(df["회사명"]) == {"삼양바이오팜"}
 
 
 @live
