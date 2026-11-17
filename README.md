@@ -95,7 +95,7 @@ disclosure_content_html("20260629000856", basis="separate")   # 잠정실적 본
 
 | 엔드포인트 | 동작하는 회사 필터 | `searchCorpName` |
 |---|---|---|
-| `disclosure_details` | `repIsuSrtCd="A005930"` ('A'+종목코드) | ⚠️ 서버가 무시. 6자리 종목코드면 자동으로 `repIsuSrtCd` 로 옮김 |
+| `disclosure_details` | `repIsuSrtCd="A005930"` ('A'+종목코드) | ⚠️ 서버가 무시. 6자리 종목코드면 자동으로 `repIsuSrtCd` 로 옮김. 'A' 없이 준 종목코드에는 'A'를 붙인다(영문이 든 단축코드 `0120G0` 도) |
 | `stock_issue_list` | `isurCd="27957"` (KIND 회사코드) | ⚠️ 서버가 무시 |
 | `pubofr_prog_com` | `searchCorpName` (+`searchCorpNameTmp`, `isurCd`) | 정상 |
 
