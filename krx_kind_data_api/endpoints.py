@@ -398,7 +398,7 @@ ENDPOINTS = {
             "orderMode": "1",
             "orderStat": "D",
             # ── 필터(빈값 = 전체) ──
-            "marketType": "all",         # all=전체 / 1=코스피 / 2=코스닥 계열
+            "marketType": "all",         # all=전체 / stockMkt / kosdaqMkt / konexMkt
             "listingType": "",           # 빈값=전체 (2 추가/3 변경/4 신규/5 재상장)
             "searchCorpName": "",        # ⚠️ 서버가 무시 — 회사 필터는 isurCd
             "comAbbrv": "",
@@ -412,7 +412,8 @@ ENDPOINTS = {
         },
         "required": ["toDate"],
         "screen": "증자·상장방식별 주식발행 현황(추가/변경/신규/재상장). "
-                  "marketType(all/1/2), listingType로 유형 필터, fromDate~toDate. "
+                  "marketType(all/stockMkt/kosdaqMkt/konexMkt), listingType로 유형 필터, fromDate~toDate. "
+                  "반환에 시장 컬럼이 없으니 시장별로 보려면 marketType 별로 따로 받을 것. "
                   "반환: 회사명·상장(예정)일·상장방식·발행주식수·액면가·발행사유·회사코드·접수번호·상세URL",
         "params": {
             "toDate": {
@@ -431,8 +432,11 @@ ENDPOINTS = {
             },
             "marketType": {
                 "kind": "filter", "required": False, "example": "all",
-                "enum": ["all", "1", "2"],
-                "desc": "시장 구분. all=전체(기본) / 1=코스피 / 2=코스닥 계열.",
+                "enum": ["all", "stockMkt", "kosdaqMkt", "konexMkt"],
+                "desc": "시장 구분. all=전체(기본) / stockMkt=유가증권 / kosdaqMkt=코스닥 / "
+                        "konexMkt=코넥스. 화면 라디오 버튼 값 그대로(2026-11 loadInitPage 확인). "
+                        "다른 KIND 화면의 1/2 표기와 다르다. 응답에 시장 컬럼이 없어 행만 보고는 "
+                        "시장을 알 수 없다 — 시장별 집계는 값마다 따로 받아 라벨을 붙인다.",
             },
             "isurCd": {
                 "kind": "filter", "required": False, "example": "27957",

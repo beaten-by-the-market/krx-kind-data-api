@@ -32,7 +32,7 @@ DataFrame으로 만들어 돌려줍니다. `**params`로 무엇이든 덮어쓸 
 | 이름 | 화면 | 비고 |
 |------|------|------|
 | `corp_list` | 상장법인목록(종목코드↔회사명 마스터) | `marketType=stockMkt/kosdaqMkt/konexMkt` |
-| `stock_issue_list` | 증자(주식발행) 현황 | `marketType`, `toDate` 필수 |
+| `stock_issue_list` | 증자(주식발행) 현황 | `marketType=all/stockMkt/kosdaqMkt/konexMkt`(응답에 시장 컬럼 없음), `toDate` 필수 |
 | `misc_list_type_stat` | 상장유형별 통계 상세(이전/특례상장) | `listMonth`(연도), `listClssCd` 필수 |
 | `growth_report` | 성장성특례 상장(성장성보고서) | euc-kr, `endDate` 필수 |
 | `listing_company` | 신규상장 기업(상장유형 01~05) | 회사코드 추출, `toDate` 필수 |

@@ -97,6 +97,17 @@ def test_stock_issue_list_type_partition():
     assert n("") == n("2") + n("3") + n("4") + n("5")
 
 
+def test_stock_issue_list_market_partition():
+    # 시장 값은 stockMkt/kosdaqMkt/konexMkt (다른 화면의 1/2 아님). 전체 = 세 시장 합.
+    def n(mt):
+        return len(fetch("stock_issue_list", marketType=mt, listingType="",
+                         fromDate="2026-04-01", toDate="2026-06-30",
+                         currentPageSize="3000"))
+    parts = [n("stockMkt"), n("kosdaqMkt"), n("konexMkt")]
+    assert all(p > 0 for p in parts)
+    assert n("all") == sum(parts)
+
+
 def test_listed_issue_status_markets_and_seldate_norm():
     # selDate를 대시 포함으로 줘도 정규화되어 동작(내부 YYYYMMDD)
     st = fetch("listed_issue_status", selDate="2026-07-21", mktId="STK", secugrpId="ST")
