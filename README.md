@@ -116,6 +116,23 @@ fetch("disclosure_details", repIsuSrtCd=rep_isu_srt_cd("41821"),
 > 회사 필터를 걸어도 **긴 기간 함정은 그대로다.** `fromDate` 를 생략하면(기본 2000-01-01)
 > 삼성전자처럼 공시가 분명히 있는 회사도 오류 없이 0건이 나온다. 기간은 월·연 단위로 끊을 것.
 
+### 정정공시 구분 — `정정` / `이후정정`
+
+`disclosure_details`에 `lastReport=""`를 주면 원본과 정정이 함께 온다. 화면의 `[정정]` 표시는 `공시제목`
+(a 태그 title)에 없어서 컬럼 두 개로 따로 준다: `정정`(이 공시가 정정공시), `이후정정`(이 원본이 나중에 정정됨).
+이벤트 스터디라면 `~정정`인 원본만 남기면 된다. 원본 접수번호로 본문을 열면 KIND가 최종 정정본을 보여 준다.
+
+```python
+df = fetch("disclosure_details", reportNm="무상증자결정", lastReport="",
+           fromDate="2025-11-01", toDate="2025-11-30")
+df[~df["정정"]]          # 원본 공시만
+```
+
+### 시나리오 노트북
+
+[scenarios/](scenarios/README.md)에 KIND 공시와 KRX 시세([krx-data-api](https://github.com/beaten-by-the-market/krx-data-api))를
+엮은 분석 예제가 실행 결과와 함께 있다(Colab 배지 포함). 예: [무상증자 이벤트 스터디](scenarios/1_disclosure_events/01_bonus_issue_event_study.md).
+
 ### 새 화면을 API로 추가
 
 `krx_kind_data_api/endpoints.py`의 `ENDPOINTS`에 dict 한 줄을 추가하면 끝입니다.

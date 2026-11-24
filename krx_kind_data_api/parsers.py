@@ -155,6 +155,11 @@ def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
     companysummary_open('04270'), 공시 원문 접수번호는 공시제목 셀의
     openDisclsViewer('20260714000204','')에서 뽑는다. 시장(유가/코스닥)은 회사 셀의
     아이콘 alt에서 읽는다.
+
+    정정 표시는 a 태그의 title 속성(=`공시제목`)에 없고 화면 글자에만 있어 따로 읽는다
+    (2026-11 확인, lastReport='' 로 원본·정정을 함께 받을 때 필요):
+      - `정정`     : 제목 앞 `<font>[정정]</font>` — 이 공시가 정정공시다.
+      - `이후정정` : 아이콘 alt '해당보고서 이후에 정정된 보고서 있음' — 이 원본은 나중에 정정됐다.
     """
     from .transport import disclosure_viewer_url
 
@@ -181,6 +186,10 @@ def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
         # 공시제목 셀: openDisclsViewer('접수번호','')
         title_a = cols[3].find("a")
         title = (title_a.get("title", "").strip() if title_a else cols[3].text.strip())
+        shown = title_a.get_text(" ", strip=True) if title_a is not None else ""
+        corrected = bool(re.match(r"\[[^\]]*정정[^\]]*\]", shown))
+        later_fix = title_a is not None and any(
+            "정정" in (img.get("alt") or "") for img in title_a.find_all("img"))
         acptno, url = "", ""
         if title_a is not None and title_a.has_attr("onclick"):
             m = re.search(r"openDisclsViewer\('(\d+)'", title_a["onclick"])
@@ -198,12 +207,14 @@ def disclosure_details(html: str, **_: Any) -> pd.DataFrame:
                 "접수번호": acptno,
                 "제출인": cols[4].text.strip(),
                 "상세URL": url,
+                "정정": corrected,
+                "이후정정": later_fix,
             }
         )
     # 결과가 0건이어도 고정 컬럼 스키마를 유지한다.
     return pd.DataFrame(rows, columns=[
         "번호", "시간", "시장", "회사코드", "회사명",
-        "공시제목", "접수번호", "제출인", "상세URL",
+        "공시제목", "접수번호", "제출인", "상세URL", "정정", "이후정정",
     ])
 
 
